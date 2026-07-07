@@ -21,7 +21,7 @@ import java.net.URL
  * sites: the banner adapter fires impression-side only because core's WinNotifier already fired the win
  * before handoff, while the fullscreen adapter fires win-side at load and impression-side at impression.
  *
- * Everything is wired but ships disabled. No live network call happens until staging flips the flags.
+ * Everything is wired but ships disabled. No live network call happens until a publisher enables these flags.
  * `burl` stays off regardless until it is confirmed that the exchange does not already bill off the
  * trackers inside the rendered ADM.
  */

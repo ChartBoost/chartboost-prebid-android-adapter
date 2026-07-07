@@ -11,7 +11,7 @@ plugins {
 val chartboostSdkVersion: String = (project.findProperty("chartboostSdkVersion") as String?) ?: "9.12.0"
 val prebidMobileVersion: String = (project.findProperty("prebidMobileVersion") as String?) ?: "3.3.1"
 
-// Adapter version, computed and validated once in the root build (shared with the validator). Stamped into
+// Adapter version, computed and validated once in the root build. Stamped into
 // BuildConfig.RENDERER_VERSION and registered with Prebid Mobile; the Prebid Server adapter echoes it back
 // from the request, so the two sides match by construction.
 val rendererVersion: String = rootProject.extra["rendererVersion"] as String
