@@ -1,0 +1,30 @@
+name: ci-tests
+
+on:
+  # Trigger on pull requests that target the following branches
+  pull_request:
+    branches:
+      - 'main'
+      - 'prerelease/**'
+  # Manual trigger from the Github Actions tab
+  workflow_dispatch:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up JDK
+      uses: ./.github/actions/setup-jdk
+
+    # Aggregate entry point mirroring the mediation adapters' `./gradlew ci`: unit tests + release assembly
+    # + coordinate/binary version-agreement check.
+    - name: CI (tests, assemble, verify version)
+      run: ./gradlew ci
+
+    - name: Verify the RC version round-trips through the POM and BuildConfig
+      run: |
+        base="$(./gradlew -q printRendererVersion | tail -n1 | tr -d '[:space:]')"
+        ./gradlew :ChartboostPrebidPlugin:verifyPublishedVersion "-PRENDERER_VERSION=${base}-rc1"

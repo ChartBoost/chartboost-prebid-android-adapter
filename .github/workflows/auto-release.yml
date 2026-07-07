@@ -1,0 +1,81 @@
+# Creates and pushes the v<version> release tag when a release-prep PR (head branch release/<version>) is
+# merged to main, which then triggers release.yml. Mirrors the Chartboost Mediation adapters' auto-release
+# step, but self-contained (no central actions repo): the tag is pushed from within this repo.
+#
+# The tag MUST be pushed with a PAT (secrets.RELEASE_PAT), not the default GITHUB_TOKEN, because a tag
+# pushed by GITHUB_TOKEN does not trigger another workflow (GitHub suppresses recursive triggers), so
+# release.yml would never fire. The PAT needs `contents: write` on this repo.
+name: auto-release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag (e.g. 309.12.0). Leave empty to use the computed version.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  auto-release:
+    # Only on a merged release-prep PR (head branch release/<version>) or a manual dispatch. A plain PR
+    # close without merge is ignored.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'release/'))
+    runs-on: ubuntu-latest
+    concurrency:
+      group: auto-release
+      cancel-in-progress: false
+
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        # Check out with the PAT so the tag push below is attributed to it and triggers release.yml.
+        token: ${{ secrets.RELEASE_PAT }}
+        fetch-depth: 0
+
+    - name: Set up JDK
+      uses: ./.github/actions/setup-jdk
+
+    - name: Resolve and validate the release version
+      id: ver
+      env:
+        INPUT_VERSION: ${{ github.event.inputs.version }}
+        HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      run: |
+        if [ -n "${INPUT_VERSION}" ]; then
+          version="${INPUT_VERSION#v}"
+        elif [ -n "${HEAD_REF}" ]; then
+          version="${HEAD_REF#release/}"
+        else
+          version="$(./gradlew -q printRendererVersion | tail -n1 | tr -d '[:space:]')"
+        fi
+        # Canonical 3-segment X.Y.Z only. RCs are private and never tagged, so no -rc tail here.
+        if ! printf '%s' "${version}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "::error::resolved version '${version}' is not a 3-segment X.Y.Z"; exit 1
+        fi
+        # Cross-check against the computed version so the tag can never drift from what the build produces.
+        base="$(./gradlew -q printRendererVersion | tail -n1 | tr -d '[:space:]')"
+        if [ "${version}" != "${base}" ]; then
+          echo "::error::version '${version}' does not match the computed version '${base}'"; exit 1
+        fi
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+    - name: Create and push the tag
+      env:
+        VERSION: ${{ steps.ver.outputs.version }}
+      run: |
+        if git ls-remote --exit-code --tags origin "v${VERSION}" >/dev/null 2>&1; then
+          echo "::error::tag v${VERSION} already exists"; exit 1
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a "v${VERSION}" -m "Release v${VERSION}"
+        git push origin "v${VERSION}"
