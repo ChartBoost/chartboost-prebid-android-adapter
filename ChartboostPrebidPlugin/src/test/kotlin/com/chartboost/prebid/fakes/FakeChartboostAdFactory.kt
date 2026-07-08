@@ -1,8 +1,7 @@
 /*
- * Copyright 2026 Chartboost, Inc.
+ * Copyright (c) 2026 Chartboost, Inc.
  *
- * Use of this source code is governed by an MIT-style
- * license that can be found in the LICENSE file.
+ * Licensed under the MIT License.
  */
 
 package com.chartboost.prebid.fakes
