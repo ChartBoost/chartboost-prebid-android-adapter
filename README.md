@@ -85,12 +85,6 @@ uses to open the PR. Both need a PAT rather than the default `GITHUB_TOKEN`, bec
 `GITHUB_TOKEN` does not trigger the downstream workflow. `create-release-version` also requires "Allow GitHub
 Actions to create and approve pull requests" to be enabled in the repository settings.
 
-## Contributions
-
-We are committed to a fully transparent development process and highly appreciate any contributions. Our team regularly monitors and investigates all submissions for the inclusion in our official adapter releases.
-
-Please refer to our [CONTRIBUTING](https://github.com/ChartBoost/chartboost-prebid-android-adapter/blob/main/CONTRIBUTING.md) file for more information on how to contribute.
-
 ## License
 
 MIT. See [LICENSE.md](LICENSE.md).
