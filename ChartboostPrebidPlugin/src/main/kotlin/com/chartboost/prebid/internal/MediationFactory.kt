@@ -6,7 +6,7 @@
 
 package com.chartboost.prebid.internal
 
-import com.chartboost.prebid.ChartboostPBMPluginRenderer
+import com.chartboost.prebid.BuildConfig
 import com.chartboost.sdk.Mediation
 import org.prebid.mobile.PrebidMobile
 
@@ -20,7 +20,7 @@ internal object MediationFactory {
     private const val MEDIATION_NAME = "Prebid"
 
     fun create(): Mediation =
-        Mediation(MEDIATION_NAME, hostPrebidVersion(), ChartboostPBMPluginRenderer.RENDERER_VERSION)
+        Mediation(MEDIATION_NAME, hostPrebidVersion(), BuildConfig.RENDERER_VERSION)
 
     private fun hostPrebidVersion(): String? =
         runCatching { PrebidMobile.SDK_VERSION }.getOrNull()

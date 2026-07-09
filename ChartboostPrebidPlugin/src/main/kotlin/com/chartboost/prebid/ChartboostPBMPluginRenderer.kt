@@ -38,7 +38,7 @@ class ChartboostPBMPluginRenderer internal constructor(
     private val config: ChartboostPrebidConfig = ChartboostPrebidConfig(),
 ) : PrebidMobilePluginRenderer {
 
-    constructor(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) : this(DefaultChartboostAdFactory(), config = config)
+    internal constructor(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) : this(DefaultChartboostAdFactory(), config = config)
 
     init {
         PluginLog.level = config.logLevel

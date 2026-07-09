@@ -44,10 +44,10 @@ internal class ChartboostBannerAdapter(
     private val urlNotifier: UrlNotifier = UrlNotifier(),
     private val location: String = PREBID_LOCATION,
     private val teardownScheduler: TeardownScheduler? = null,
-    private val eventListener: ChartboostPrebidEventListener? = null,
+    private var eventListener: ChartboostPrebidEventListener? = null,
 ) : FrameLayout(context), BannerCallback {
 
-    private val bid: Bid? = bidResponse.winningBid
+    private var bid: Bid? = bidResponse.winningBid
     private val loadedLatch = SingleFireLatch()
     private val displayedLatch = SingleFireLatch()
     private val impressionLatch = SingleFireLatch()
@@ -58,12 +58,13 @@ internal class ChartboostBannerAdapter(
     private var teardownAction: Runnable? = null
 
     init {
-        val adm = bid?.admOrNull
+        val winningBid = bid
+        val adm = winningBid?.admOrNull
         if (adm == null) {
             // Never return null/throw from createBannerAdView; fail through the loading delegate.
             mainThread.execute { reportFailed(ChartboostErrorMapper.admInvalid()) }
         } else {
-            val size = BannerSizeMapper.map(bid.width, bid.height)
+            val size = BannerSizeMapper.map(winningBid.width, winningBid.height)
             // Constructing a Chartboost Banner throws if the Monetization SDK was never started. Never let
             // that escape createBannerAdView; report it through the loading delegate instead.
             try {
@@ -81,13 +82,16 @@ internal class ChartboostBannerAdapter(
 
     /** Reports a load failure to the Prebid delegate and the optional plugin listener, at most once. */
     private fun reportFailed(error: AdException) {
-        if (failedLatch.fire()) {
+        // Guard mirrors onAdLoaded's own !failedLatch.hasFired check: a cache error arriving after a
+        // successful load (e.g. an internal re-cache) must not fire FAILED-after-LOADED.
+        if (!loadedLatch.hasFired && failedLatch.fire()) {
             displayViewListener.onAdFailed(error)
             eventListener?.onAdFailed(ChartboostAdFormat.BANNER, error)
         }
     }
 
     override fun onAdLoaded(event: CacheEvent, error: CacheError?) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         if (error != null) {
             reportFailed(ChartboostErrorMapper.map(error))
         } else if (!failedLatch.hasFired && loadedLatch.fire()) {
@@ -111,6 +115,7 @@ internal class ChartboostBannerAdapter(
     }
 
     override fun onImpressionRecorded(event: ImpressionEvent) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         event.nonBlankAdId?.let { PluginLog.d("banner impression recorded, Chartboost adID=$it") }
         if (displayedLatch.fire()) {
             displayViewListener.onAdDisplayed()
@@ -122,6 +127,7 @@ internal class ChartboostBannerAdapter(
     }
 
     override fun onAdClicked(event: ClickEvent, error: ClickError?) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         if (error != null) PluginLog.d("banner click error ${error.code}")
         displayViewListener.onAdClicked()
         eventListener?.onAdClicked(ChartboostAdFormat.BANNER)
@@ -141,6 +147,9 @@ internal class ChartboostBannerAdapter(
         // fired (true teardown), this is a no-op.
         teardownAction?.let { cancelTeardown(it) }
         teardownAction = null
+        if (destroyed.hasFired) {
+            PluginLog.w("banner re-attached after teardown already ran; the slot stays blank — Prebid's plugin contract exposes no reload hook on this path")
+        }
     }
 
     public override fun onDetachedFromWindow() {
@@ -159,6 +168,10 @@ internal class ChartboostBannerAdapter(
             if (!isAttachedToWindow && destroyed.fire()) {
                 banner?.detach()
                 banner = null
+                // Also drop the publisher-supplied references so a RecyclerView-cached (recycled-but-not-GC'd)
+                // view doesn't pin them; every use of both is already null-safe.
+                bid = null
+                eventListener = null
             }
         }
         teardownAction = action

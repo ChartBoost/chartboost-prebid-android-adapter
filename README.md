@@ -14,6 +14,7 @@ that Chartboost Mediation and MAX drive, plugged into Prebid.
 | Prebid Mobile SDK        | 3.3.1+  |
 | Chartboost Monetization SDK | 9.12.0+ |
 | Android API              | 21+     |
+| kotlinx-coroutines-android | present at runtime (ships transitively with the Chartboost Monetization SDK) |
 
 ## How it works
 
@@ -36,6 +37,10 @@ implementation "com.chartboost:chartboost-prebid-adapter:309.12.0"
 implementation "com.chartboost:chartboost-sdk:9.12.0"
 implementation "org.prebid:prebid-mobile-sdk:3.3.1"
 ```
+
+The adapter uses Kotlin coroutines at runtime and expects `kotlinx-coroutines-android` on the app
+classpath, which the Chartboost Monetization SDK already provides transitively; no extra dependency is
+needed unless your build excludes it.
 
 Then register the renderer once before initializing Prebid:
 

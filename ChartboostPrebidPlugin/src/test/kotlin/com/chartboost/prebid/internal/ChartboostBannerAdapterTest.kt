@@ -17,6 +17,7 @@ import com.chartboost.sdk.ads.Banner
 import com.chartboost.sdk.events.CacheError
 import com.chartboost.sdk.events.CacheEvent
 import com.chartboost.sdk.events.ClickEvent
+import com.chartboost.sdk.events.ExpirationEvent
 import com.chartboost.sdk.events.ImpressionEvent
 import io.mockk.every
 import io.mockk.mockk
@@ -232,5 +233,50 @@ class ChartboostBannerAdapterTest {
         adapter.onImpressionRecorded(mockk<ImpressionEvent>(relaxed = true))
         verify { listener.onAdDisplayed() }
         assertEquals(listOf("https://b", "https://i"), fired)
+    }
+
+    @Test
+    fun `repeated impressions report displayed and fire impression urls only once`() {
+        val bid = fakeBid(
+            burl = "https://b",
+            events = mapOf(EVENT_WIN_KEY to "https://w", EVENT_IMP_KEY to "https://i"),
+        )
+        val adapter = adapter(bid = bid, notifier = capturingNotifier())
+        val event = mockk<ImpressionEvent>(relaxed = true)
+        adapter.onImpressionRecorded(event)
+        adapter.onImpressionRecorded(event)
+        verify(exactly = 1) { listener.onAdDisplayed() }
+        assertEquals(listOf("https://b", "https://i"), fired)
+    }
+
+    @Test
+    fun `expiry never reports failure`() {
+        // Banner expiry is a pure no-op by design (unlike the fullscreen path, which surfaces pre-ready
+        // expiry as a reload signal). Exercise it before any load so loadedLatch is unset: wiring expiry to
+        // reportFailed would then actually fire onAdFailed and fail this test. Testing after load would be
+        // masked by reportFailed's !loadedLatch.hasFired guard.
+        val adapter = adapter()
+        adapter.onAdExpired(mockk<ExpirationEvent>(relaxed = true))
+        verify(exactly = 0) { listener.onAdFailed(any()) }
+    }
+
+    @Test
+    fun `late cache failure after load does not report failed`() {
+        val adapter = adapter()
+        val event = mockk<CacheEvent>(relaxed = true)
+        adapter.onAdLoaded(event, null) // loaded
+        adapter.onAdLoaded(event, cacheError(CacheError.Code.NO_AD_FOUND)) // late cache error
+        verify(exactly = 0) { listener.onAdFailed(any()) }
+        verify(exactly = 1) { listener.onAdLoaded() }
+    }
+
+    @Test
+    fun `callbacks after teardown are dropped`() {
+        val scheduler = FakeTeardownScheduler()
+        val adapter = adapterWithScheduler(scheduler)
+        adapter.onDetachedFromWindow()
+        scheduler.runPending() // fires teardown, claims the destroyed latch
+        adapter.onImpressionRecorded(mockk(relaxed = true))
+        verify(exactly = 0) { listener.onAdDisplayed() }
     }
 }

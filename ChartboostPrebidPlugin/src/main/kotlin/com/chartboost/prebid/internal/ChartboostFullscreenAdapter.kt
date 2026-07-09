@@ -52,6 +52,7 @@ internal class ChartboostFullscreenAdapter(
     private val winLatch = SingleFireLatch()
     private val impressionLatch = SingleFireLatch()
     private val failedLatch = SingleFireLatch()
+    private val destroyed = SingleFireLatch()
 
     private var ad: Ad? = null
     private var bid: Bid? = null
@@ -98,9 +99,11 @@ internal class ChartboostFullscreenAdapter(
         // is the available teardown.
         ad?.clearCache()
         ad = null
+        destroyed.fire()
     }
 
     override fun onAdLoaded(event: CacheEvent, error: CacheError?) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         if (error != null) {
             reportLoadFailed(ChartboostErrorMapper.map(error))
         } else if (!failedLatch.hasFired && readyLatch.fire()) {
@@ -116,6 +119,7 @@ internal class ChartboostFullscreenAdapter(
     }
 
     override fun onAdShown(event: ShowEvent, error: ShowError?) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         if (error != null) {
             // No terminal show-failed signal in Prebid; no impression fires, which is correct billing.
             PluginLog.w("fullscreen show failed: ${ChartboostErrorMapper.mapShow(error)}")
@@ -126,27 +130,32 @@ internal class ChartboostFullscreenAdapter(
     }
 
     override fun onImpressionRecorded(event: ImpressionEvent) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         event.nonBlankAdId?.let { PluginLog.d("fullscreen impression recorded, Chartboost adID=$it") }
         if (impressionLatch.fire()) bid?.let(urlNotifier::fireImpression)
     }
 
     override fun onAdClicked(event: ClickEvent, error: ClickError?) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         if (error != null) PluginLog.d("fullscreen click error ${error.code}")
         listener.onInterstitialClicked()
         eventListener?.onAdClicked(adFormat)
     }
 
     override fun onAdDismiss(event: DismissEvent) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         listener.onInterstitialClosed()
         eventListener?.onAdDismissed(adFormat)
     }
 
     override fun onRewardEarned(event: RewardEvent) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         listener.onUserEarnedReward()
         eventListener?.onUserEarnedReward(adFormat)
     }
 
     override fun onAdExpired(event: ExpirationEvent) = mainThread.execute {
+        if (destroyed.hasFired) return@execute
         // Surface expiry as a load failure only while the ad has NOT been reported ready: after
         // onInterstitialReadyForDisplay, Prebid has already notified AD_LOADED, so a failedToLoad here would
         // violate its post-load contract (and a later show() would be dropped). Post-ready expiry instead
@@ -161,7 +170,9 @@ internal class ChartboostFullscreenAdapter(
 
     /** Reports a load failure to the Prebid listener and the optional plugin listener, at most once. */
     private fun reportLoadFailed(error: AdException) {
-        if (failedLatch.fire()) {
+        // Guard mirrors onAdLoaded's own !failedLatch.hasFired check: a cache error arriving after
+        // ready-for-display must not fire FAILED-after-LOADED.
+        if (!readyLatch.hasFired && failedLatch.fire()) {
             listener.onInterstitialFailedToLoad(error)
             eventListener?.onAdFailed(adFormat, error)
         }

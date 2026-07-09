@@ -253,4 +253,49 @@ class ChartboostFullscreenAdapterTest {
         verify(exactly = 0) { listener.onInterstitialReadyForDisplay() }
         verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
     }
+
+    @Test
+    fun `onImpressionRecorded fires impression urls only once when redelivered`() {
+        val bid = fakeBid(burl = "https://b", events = mapOf(EVENT_IMP_KEY to "https://i"))
+        val adapter = adapter(capturingNotifier()).also { it.loadAd(config(false), fakeBidResponse(bid)) }
+        fired.clear() // drop the win-side fired at load
+        val event = mockk<ImpressionEvent>(relaxed = true)
+        adapter.onImpressionRecorded(event)
+        adapter.onImpressionRecorded(event)
+        assertEquals(listOf("https://b", "https://i"), fired)
+    }
+
+    @Test
+    fun `onAdShown reports displayed only once when redelivered`() {
+        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
+        val adapter = adapter(eventListener = events).also { it.loadAd(config(false), fakeBidResponse()) }
+        adapter.onAdShown(mockk(relaxed = true), null)
+        adapter.onAdShown(mockk(relaxed = true), null)
+        verify(exactly = 1) { listener.onInterstitialDisplayed() }
+    }
+
+    @Test
+    fun `event listener is notified of failure when the markup is empty`() {
+        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
+        adapter(eventListener = events).loadAd(config(false), fakeBidResponse(fakeBid(adm = null)))
+        verify { events.onAdFailed(eq(ChartboostAdFormat.INTERSTITIAL), any()) }
+    }
+
+    @Test
+    fun `late cache failure after ready does not report failed to load`() {
+        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+        val event = mockk<CacheEvent>(relaxed = true)
+        adapter.onAdLoaded(event, null) // ready
+        adapter.onAdLoaded(event, cacheError(CacheError.Code.NO_AD_FOUND)) // late cache error
+        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
+        verify(exactly = 1) { listener.onInterstitialReadyForDisplay() }
+    }
+
+    @Test
+    fun `callbacks after destroy do not reach the listener`() {
+        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+        adapter.destroy()
+        adapter.onAdLoaded(mockk(relaxed = true), null)
+        verify(exactly = 0) { listener.onInterstitialReadyForDisplay() }
+    }
 }

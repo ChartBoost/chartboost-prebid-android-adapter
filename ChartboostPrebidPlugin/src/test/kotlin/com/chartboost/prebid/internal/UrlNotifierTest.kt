@@ -7,6 +7,7 @@
 package com.chartboost.prebid.internal
 
 import com.chartboost.prebid.fakes.fakeBid
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
@@ -138,5 +139,22 @@ class UrlNotifierTest {
         assertFalse(results[0].second)
         // resolution failed before substitution, so the unresolved template is surfaced, not a value
         assertEquals("https://b?p=\${AUCTION_PRICE}", results[0].first)
+    }
+
+    @Test
+    fun `a throwing result listener does not escape into the coroutine scope`() {
+        // Regression: onResult used to run outside runCatching, so a throwing publisher listener reached the
+        // scope's uncaught-exception path (handleCoroutineException), which on Android crashes the process.
+        // The fix wraps onResult in runCatching. Assert nothing escapes to the scope's CoroutineExceptionHandler;
+        // revert the wrap and the handler records the throw, failing this test.
+        val escaped = mutableListOf<Throwable>()
+        val handler = CoroutineExceptionHandler { _, e -> escaped += e }
+        UrlNotifier(
+            burlEnabled = true,
+            scope = CoroutineScope(Dispatchers.Unconfined + handler),
+            httpGet = { },
+            onResult = { _, _ -> throw RuntimeException("listener blew up") },
+        ).fireImpression(fakeBid(burl = "https://b"))
+        assertTrue("a throwing onResult must not escape into the coroutine scope", escaped.isEmpty())
     }
 }

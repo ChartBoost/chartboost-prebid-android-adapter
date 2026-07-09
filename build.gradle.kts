@@ -25,6 +25,10 @@ val rendererVersion: String = ((findProperty("RENDERER_VERSION") as String?) ?: 
     val monMajor = intPart(mon[0], "chartboostSdkVersion major")
     val monMinor = intPart(mon[1], "chartboostSdkVersion minor")
     val monPatch = intPart(mon[2].substringBefore('-'), "chartboostSdkVersion patch") // tolerate a -suffix
+    // Bound the two components that share a place-value slot with another component, so two different
+    // SDK-pin states can never encode the identical RENDERER_VERSION string.
+    require(monMajor in 0..99) { "chartboostSdkVersion major '$monMajor' must be 0-99 so it cannot collide with the Prebid-major component of RENDERER_VERSION" }
+    require(adapterRevision in 0..99) { "adapterRevision '$adapterRevision' must be 0-99 so it cannot collide with the Monetization-patch component of RENDERER_VERSION" }
     "${prebidMajor * prebidMajorScale + monMajor}.$monMinor.${monPatch * monPatchScale + adapterRevision}"
 }).also {
     // Registered with Prebid Mobile, so it must be canonical X.Y.Z semver, optionally with a release-
