@@ -96,13 +96,19 @@ internal class ChartboostFullscreenAdapter(
 
     override fun destroy() {
         // The released Monetization SDK (9.12.x) exposes no destroy() for fullscreen ads, so clearCache()
-        // is the available teardown.
+        // is the available teardown. clearCache() only clears the loaded-ad state; it does NOT tear down an
+        // ad that is already showing, so post-show engagement signals (impression/click/dismiss/reward) keep
+        // arriving and must still be forwarded. Only the load-completion path is gated on `destroyed` (see
+        // onAdLoaded), to stop a late cache result from reporting READY after the controller was discarded.
         ad?.clearCache()
         ad = null
         destroyed.fire()
     }
 
     override fun onAdLoaded(event: CacheEvent, error: CacheError?) = mainThread.execute {
+        // A late cache result after destroy() must not report READY to a controller Prebid already discarded
+        // (that leaves the ad unit stuck in a ready state, and a later show() no-ops). Engagement callbacks
+        // below are deliberately NOT gated: a showing ad is not torn down by clearCache().
         if (destroyed.hasFired) return@execute
         if (error != null) {
             reportLoadFailed(ChartboostErrorMapper.map(error))
@@ -119,7 +125,6 @@ internal class ChartboostFullscreenAdapter(
     }
 
     override fun onAdShown(event: ShowEvent, error: ShowError?) = mainThread.execute {
-        if (destroyed.hasFired) return@execute
         if (error != null) {
             // No terminal show-failed signal in Prebid; no impression fires, which is correct billing.
             PluginLog.w("fullscreen show failed: ${ChartboostErrorMapper.mapShow(error)}")
@@ -130,26 +135,22 @@ internal class ChartboostFullscreenAdapter(
     }
 
     override fun onImpressionRecorded(event: ImpressionEvent) = mainThread.execute {
-        if (destroyed.hasFired) return@execute
         event.nonBlankAdId?.let { PluginLog.d("fullscreen impression recorded, Chartboost adID=$it") }
         if (impressionLatch.fire()) bid?.let(urlNotifier::fireImpression)
     }
 
     override fun onAdClicked(event: ClickEvent, error: ClickError?) = mainThread.execute {
-        if (destroyed.hasFired) return@execute
         if (error != null) PluginLog.d("fullscreen click error ${error.code}")
         listener.onInterstitialClicked()
         eventListener?.onAdClicked(adFormat)
     }
 
     override fun onAdDismiss(event: DismissEvent) = mainThread.execute {
-        if (destroyed.hasFired) return@execute
         listener.onInterstitialClosed()
         eventListener?.onAdDismissed(adFormat)
     }
 
     override fun onRewardEarned(event: RewardEvent) = mainThread.execute {
-        if (destroyed.hasFired) return@execute
         listener.onUserEarnedReward()
         eventListener?.onUserEarnedReward(adFormat)
     }

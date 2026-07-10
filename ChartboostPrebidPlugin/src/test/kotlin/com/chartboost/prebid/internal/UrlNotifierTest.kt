@@ -12,8 +12,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 class UrlNotifierTest {
 
@@ -156,5 +158,20 @@ class UrlNotifierTest {
             onResult = { _, _ -> throw RuntimeException("listener blew up") },
         ).fireImpression(fakeBid(burl = "https://b"))
         assertTrue("a throwing onResult must not escape into the coroutine scope", escaped.isEmpty())
+    }
+
+    @Test
+    fun `a non-2xx response status is treated as a failure`() {
+        // getResponseCode() returns 4xx/5xx as a normal value, so a dead endpoint would otherwise report
+        // success. The status check that turns that into a thrown IOException lives here.
+        assertThrows(IOException::class.java) { ensureSuccessfulStatus(404) }
+        assertThrows(IOException::class.java) { ensureSuccessfulStatus(500) }
+    }
+
+    @Test
+    fun `a 2xx response status is accepted`() {
+        ensureSuccessfulStatus(200)
+        ensureSuccessfulStatus(204)
+        ensureSuccessfulStatus(299)
     }
 }

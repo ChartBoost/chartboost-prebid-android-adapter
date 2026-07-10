@@ -81,10 +81,7 @@ internal class UrlNotifier(
                 instanceFollowRedirects = true
             }
             try {
-                // getResponseCode() only throws on I/O failure, not on an HTTP error status, so a
-                // dead endpoint (404/500/etc.) would otherwise report as success.
-                val code = connection.responseCode
-                if (code !in 200..299) throw IOException("HTTP $code")
+                ensureSuccessfulStatus(connection.responseCode)
             } finally {
                 connection.disconnect()
             }
@@ -94,4 +91,16 @@ internal class UrlNotifier(
         const val HTTP_SCHEME = "http://"
         const val HTTPS_SCHEME = "https://"
     }
+}
+
+private const val HTTP_SUCCESS_MIN = 200
+private const val HTTP_SUCCESS_MAX = 299
+
+/**
+ * Throws on a non-2xx HTTP status. HttpURLConnection.getResponseCode() returns 4xx/5xx as a normal value
+ * (it only throws on an I/O failure), so without this a dead or misconfigured endpoint would look like a
+ * successful fire. Extracted so the status check is unit-testable without a live network call.
+ */
+internal fun ensureSuccessfulStatus(code: Int) {
+    if (code !in HTTP_SUCCESS_MIN..HTTP_SUCCESS_MAX) throw IOException("HTTP $code")
 }

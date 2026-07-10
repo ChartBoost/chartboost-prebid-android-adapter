@@ -292,10 +292,30 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
-    fun `callbacks after destroy do not reach the listener`() {
+    fun `a late load after destroy does not report ready for display`() {
         val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
         adapter.destroy()
         adapter.onAdLoaded(mockk(relaxed = true), null)
         verify(exactly = 0) { listener.onInterstitialReadyForDisplay() }
+    }
+
+    @Test
+    fun `a reward earned after destroy still reaches the listener`() {
+        // clearCache() does not tear down a showing fullscreen ad, so a reward the user genuinely earns
+        // after the host called destroy() (e.g. from its Activity onDestroy) must still be granted.
+        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
+        val adapter = adapter(eventListener = events).also { it.loadAd(config(rewarded = true), fakeBidResponse()) }
+        adapter.destroy()
+        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
+        verify(exactly = 1) { listener.onUserEarnedReward() }
+        verify(exactly = 1) { events.onUserEarnedReward(ChartboostAdFormat.REWARDED) }
+    }
+
+    @Test
+    fun `a dismiss after destroy still reaches the listener`() {
+        val adapter = adapter().also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
+        adapter.destroy()
+        adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
+        verify(exactly = 1) { listener.onInterstitialClosed() }
     }
 }
