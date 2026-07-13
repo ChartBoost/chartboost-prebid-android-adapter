@@ -19,10 +19,10 @@ import org.prebid.mobile.api.rendering.pluginrenderer.PrebidMobilePluginRegister
 object ChartboostPrebidRenderer {
 
     /** The renderer name sent in every bid request. Must match the Prebid Server adapter's `rendererName`. */
-    val rendererName: String get() = ChartboostPBMPluginRenderer.NAME
+    val rendererName: String get() = ChartboostPrebidPluginRenderer.NAME
 
     /** The renderer version sent in every bid request. Must byte-match the Prebid Server adapter's `rendererVersion`. */
-    val rendererVersion: String get() = ChartboostPBMPluginRenderer.RENDERER_VERSION
+    val rendererVersion: String get() = ChartboostPrebidPluginRenderer.RENDERER_VERSION
 
     /**
      * Returns whether [rendererVersion] exactly equals [prebidServerRendererVersion] — the value the
@@ -35,7 +35,7 @@ object ChartboostPrebidRenderer {
         rendererVersion == prebidServerRendererVersion
 
     fun register(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) {
-        PrebidMobilePluginRegister.getInstance().registerPlugin(ChartboostPBMPluginRenderer(config))
+        PrebidMobilePluginRegister.getInstance().registerPlugin(ChartboostPrebidPluginRenderer(config))
     }
 
     /**

@@ -30,13 +30,13 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
-class ChartboostPBMPluginRendererTest {
+class ChartboostPrebidPluginRendererTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
-    private val renderer = ChartboostPBMPluginRenderer(FakeChartboostAdFactory())
+    private val renderer = ChartboostPrebidPluginRenderer(FakeChartboostAdFactory())
 
     private fun rendererWithToken(token: String?) =
-        ChartboostPBMPluginRenderer(FakeChartboostAdFactory(), bidderToken = { token })
+        ChartboostPrebidPluginRenderer(FakeChartboostAdFactory(), bidderToken = { token })
 
     @Test
     fun `reports the platform-specific renderer name`() {
@@ -96,19 +96,19 @@ class ChartboostPBMPluginRendererTest {
 
     @Test
     fun `DEBUG config sets PluginLog level to DEBUG`() {
-        ChartboostPBMPluginRenderer(ChartboostPrebidConfig(logLevel = LogLevel.DEBUG))
+        ChartboostPrebidPluginRenderer(ChartboostPrebidConfig(logLevel = LogLevel.DEBUG))
         assertEquals(LogLevel.DEBUG, PluginLog.level)
     }
 
     @Test
     fun `default config leaves PluginLog level at WARN`() {
-        ChartboostPBMPluginRenderer(ChartboostPrebidConfig())
+        ChartboostPrebidPluginRenderer(ChartboostPrebidConfig())
         assertEquals(LogLevel.WARN, PluginLog.level)
     }
 
     @Test
     fun `buildNotifier has eventsEnabled and nurlEnabled true when notifications are enabled`() {
-        val notifier = ChartboostPBMPluginRenderer(
+        val notifier = ChartboostPrebidPluginRenderer(
             ChartboostPrebidConfig(notificationsEnabled = true)
         ).buildNotifier()
         assertTrue(notifier.eventsEnabled)
@@ -118,7 +118,7 @@ class ChartboostPBMPluginRendererTest {
 
     @Test
     fun `buildNotifier has all flags false when notifications are disabled`() {
-        val notifier = ChartboostPBMPluginRenderer(ChartboostPrebidConfig()).buildNotifier()
+        val notifier = ChartboostPrebidPluginRenderer(ChartboostPrebidConfig()).buildNotifier()
         assertFalse(notifier.eventsEnabled)
         assertFalse(notifier.nurlEnabled)
         assertFalse(notifier.burlEnabled)
@@ -126,7 +126,7 @@ class ChartboostPBMPluginRendererTest {
 
     @Test
     fun `buildNotifier enables burl independently when burl is enabled`() {
-        val notifier = ChartboostPBMPluginRenderer(ChartboostPrebidConfig(burlEnabled = true)).buildNotifier()
+        val notifier = ChartboostPrebidPluginRenderer(ChartboostPrebidConfig(burlEnabled = true)).buildNotifier()
         assertTrue(notifier.burlEnabled)
         // burl is gated separately from notifications, so the win/imp event flags stay off.
         assertFalse(notifier.eventsEnabled)
@@ -136,7 +136,7 @@ class ChartboostPBMPluginRendererTest {
     @Test
     fun `banner adapter receives the configured location`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPBMPluginRenderer(
+        val r = ChartboostPrebidPluginRenderer(
             factory,
             config = ChartboostPrebidConfig(location = "MyPlacement"),
         )
@@ -153,7 +153,7 @@ class ChartboostPBMPluginRendererTest {
     @Test
     fun `banner adapter receives the default location when config uses the default`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPBMPluginRenderer(factory)
+        val r = ChartboostPrebidPluginRenderer(factory)
         r.createBannerAdView(
             context,
             mockk<DisplayViewListener>(relaxed = true),
@@ -167,7 +167,7 @@ class ChartboostPBMPluginRendererTest {
     @Test
     fun `fullscreen adapter receives the configured location`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPBMPluginRenderer(
+        val r = ChartboostPrebidPluginRenderer(
             factory,
             config = ChartboostPrebidConfig(location = "FullscreenPlacement"),
         )
@@ -181,7 +181,7 @@ class ChartboostPBMPluginRendererTest {
     @Test
     fun `fullscreen adapter receives the default location when config uses the default`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPBMPluginRenderer(factory)
+        val r = ChartboostPrebidPluginRenderer(factory)
         val adConfig = mockk<AdUnitConfiguration>(relaxed = true)
         every { adConfig.isRewarded } returns false
         r.createInterstitialController(context, mockk(relaxed = true), adConfig, fakeBidResponse())

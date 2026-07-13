@@ -32,7 +32,7 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  * SDK for rendering. A thin, stateless-per-load bridge: each ad unit maps to one renderer-created adapter
  * with no shared mutable state. Register it once via [ChartboostPrebidRenderer.register].
  */
-class ChartboostPBMPluginRenderer internal constructor(
+class ChartboostPrebidPluginRenderer internal constructor(
     private val factory: ChartboostAdFactory,
     private val bidderToken: () -> String? = { Chartboost.getBidderToken() },
     private val config: ChartboostPrebidConfig = ChartboostPrebidConfig(),

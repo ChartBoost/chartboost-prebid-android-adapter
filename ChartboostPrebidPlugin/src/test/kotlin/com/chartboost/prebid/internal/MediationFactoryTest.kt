@@ -6,7 +6,7 @@
 
 package com.chartboost.prebid.internal
 
-import com.chartboost.prebid.ChartboostPBMPluginRenderer
+import com.chartboost.prebid.ChartboostPrebidPluginRenderer
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.prebid.mobile.PrebidMobile
@@ -25,6 +25,6 @@ class MediationFactoryTest {
 
     @Test
     fun `uses the renderer version as the adapter version`() {
-        assertEquals(ChartboostPBMPluginRenderer.RENDERER_VERSION, MediationFactory.create().adapterVersion)
+        assertEquals(ChartboostPrebidPluginRenderer.RENDERER_VERSION, MediationFactory.create().adapterVersion)
     }
 }
