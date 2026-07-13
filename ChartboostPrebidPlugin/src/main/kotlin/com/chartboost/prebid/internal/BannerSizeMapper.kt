@@ -9,11 +9,13 @@ package com.chartboost.prebid.internal
 import com.chartboost.sdk.ads.Banner
 
 /**
- * Maps an arbitrary bid width/height to one of the Monetization SDK's three [Banner.BannerSize] values.
+ * Maps an arbitrary bid width/height to one of the Monetization SDK's [Banner.BannerSize] values.
  *
- * The backend enforces no size restriction, so the adapter must accept any
- * size rather than reject it client-side. The SDK only renders at the three enum dimensions, so we pick
- * the nearest one; the host should size its container to [Banner.getBannerWidth]/[Banner.getBannerHeight].
+ * The backend enforces no size restriction, so the adapter must accept any size rather than reject it
+ * client-side. The SDK renders only at its fixed [Banner.BannerSize] dimensions, so we pick the nearest
+ * one; the host should size its container to [Banner.getBannerWidth]/[Banner.getBannerHeight]. The
+ * candidate set is read from [Banner.BannerSize.entries] at runtime, so a size the host's SDK adds in a
+ * later release (such as a 300x600 rectangle) is matched automatically, no adapter change required.
  */
 internal object BannerSizeMapper {
 
