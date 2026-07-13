@@ -54,6 +54,15 @@ PrebidMobile.initializeSdk(context, "https://<your-pbs-host>/openrtb2/auction") 
 Then load a rendering ad unit as usual (`BannerView` / `InterstitialAdUnit` / `RewardedAdUnit`); a
 Chartboost-flagged bid routes to this plugin automatically.
 
+## Consent and privacy
+
+This adapter does not collect, store, or forward any consent signals. GDPR, US Privacy (CCPA), COPPA, and
+GPP are owned by the Chartboost Monetization SDK. The Chartboost Monetization SDK will collect these
+signals, if available from consent management platforms. Configure your regulatory signals via your consent
+management platform before loading ads, exactly as you would for any other Chartboost integration; see the 
+Monetization SDK's own documentation for how. Plugin-rendered ads render through that same SDK instance, 
+so its consent state applies to them as well.
+
 ## Repository layout
 
 | Path                     | What it is |
