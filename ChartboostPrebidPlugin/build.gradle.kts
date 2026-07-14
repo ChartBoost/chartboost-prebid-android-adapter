@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2026 Chartboost, Inc.
+ *
+ * Licensed under the MIT License.
+ */
+
 import org.gradle.api.publish.maven.tasks.AbstractPublishToMaven
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 

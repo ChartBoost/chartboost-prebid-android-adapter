@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2026 Chartboost, Inc.
+ *
+ * Licensed under the MIT License.
+ */
+
 plugins {
     id("com.android.library") version "8.13.2" apply false
     id("org.jetbrains.kotlin.android") version "2.3.0" apply false

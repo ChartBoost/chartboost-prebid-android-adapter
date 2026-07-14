@@ -1,3 +1,9 @@
+/*
+ * Copyright (c) 2026 Chartboost, Inc.
+ *
+ * Licensed under the MIT License.
+ */
+
 pluginManagement {
     repositories {
         google()
