@@ -65,6 +65,64 @@ PrebidMobile.initializeSdk(context, "https://<your-pbs-host>/openrtb2/auction") 
 Then load a rendering ad unit as usual (`BannerView` / `InterstitialAdUnit` / `RewardedAdUnit`); a
 Chartboost-flagged bid routes to this plugin automatically.
 
+## Configuration
+
+`register()` takes an optional `ChartboostPrebidConfig`. Every field has a default that reproduces the
+bare `register()` behavior, so you only need to set what you want to change:
+
+```kotlin
+ChartboostPrebidRenderer.register(
+    ChartboostPrebidConfig(
+        location = "Home_Interstitial",
+        logLevel = LogLevel.DEBUG,
+        eventListener = myEventListener,
+    ),
+)
+```
+
+From Java, build the same config with `ChartboostPrebidConfig.Builder` (Kotlin default arguments aren't
+visible to Java callers); each setter returns `this`.
+
+| Field | Default | What it does |
+| ----- | ------- | ------------- |
+| `location` | `"Prebid"` | Chartboost ad location tag attached to every plugin-rendered ad. A blank value coerces back to the default. Override to break out placements in Chartboost reporting. |
+| `logLevel` | `LogLevel.WARN` | Plugin log verbosity; see below. |
+| `eventListener` | `null` | Optional callback for plugin-rendered ad lifecycle events (see below). |
+
+`LogLevel` is ordered least to most verbose:
+
+| Level | Gates |
+| ----- | ----- |
+| `NONE` | Nothing — no warnings, no integration-info line. |
+| `WARN` (default) | Warnings, plus the one-line output of `logIntegrationInfo()`. |
+| `DEBUG` | Adds verbose per-ad debug logging on top of `WARN`. |
+
+`ChartboostPrebidEventListener` reports what the plugin itself did with an ad, separately from Prebid's own
+per-ad-unit listeners — useful for analytics or for telling a real adapter failure apart from a silent
+routing fallback. All callbacks run on the main thread and take a `ChartboostAdFormat`
+(`BANNER` / `INTERSTITIAL` / `REWARDED`):
+
+- `onAdLoaded(format)`
+- `onAdDisplayed(format)` — the ad became visible. Fires on the Chartboost show event for `INTERSTITIAL` /
+  `REWARDED`, and on the first recorded impression for `BANNER` (banners have no separate show signal).
+- `onAdClicked(format)`
+- `onAdFailed(format, error)` — `error` is Prebid's `AdException`.
+- `onAdDismissed(format)` — fullscreen only; banners never invoke it.
+- `onUserEarnedReward(format)` — fullscreen only; banners never invoke it.
+
+Prebid's own ad lifecycle has no terminal show-failed signal, so a fullscreen ad that loads but then fails
+at show time (e.g. it expired before `show()`) is logged but does not invoke `onAdFailed`; don't treat a
+missing display as a guaranteed failure callback.
+
+`ChartboostPrebidRenderer` also exposes two integration helpers:
+
+- `matchesServerRendererVersion(prebidServerRendererVersion)` — returns whether `rendererVersion` exactly,
+  byte-for-byte, equals the value your Prebid Server adapter stamps as `ext.prebid.meta.rendererVersion`. A
+  mismatch makes Prebid Mobile silently fall back to its default renderer, so assert on this during
+  integration to fail fast instead of debugging a silent fallback.
+- `logIntegrationInfo()` — logs the registered renderer name and version at `WARN`-or-above verbosity, for
+  the same purpose.
+
 ## Consent and privacy
 
 This adapter does not collect, store, or forward any consent signals. GDPR, US Privacy (CCPA), COPPA, and
@@ -103,12 +161,7 @@ The release process mirrors the Chartboost Mediation adapters:
 The `-rcN` tail and the bare version both ride through the server echo, so the client-registered and
 server-stamped versions still match.
 
-**Release setup (one time).** The workflows need `JFROG_USER` / `JFROG_PASS` on a `CI` GitHub environment,
-with write access to `private-chartboost-ads` (RCs) and `chartboost-ads` (public), plus a repo/org
-`RELEASE_PAT` secret (`contents: write`) that `auto-release` uses to push the tag and `create-release-version`
-uses to open the PR. Both need a PAT rather than the default `GITHUB_TOKEN`, because a tag or PR created by
-`GITHUB_TOKEN` does not trigger the downstream workflow. `create-release-version` also requires "Allow GitHub
-Actions to create and approve pull requests" to be enabled in the repository settings.
+Maintainers: see [RELEASING.md](RELEASING.md) for the one-time setup and how each workflow fits together.
 
 ## License
 
