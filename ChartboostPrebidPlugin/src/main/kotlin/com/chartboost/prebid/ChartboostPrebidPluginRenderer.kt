@@ -14,7 +14,6 @@ import com.chartboost.prebid.internal.ChartboostFullscreenAdapter
 import com.chartboost.prebid.internal.DefaultChartboostAdFactory
 import com.chartboost.prebid.internal.PREBID_LOCATION
 import com.chartboost.prebid.internal.PluginLog
-import com.chartboost.prebid.internal.UrlNotifier
 import com.chartboost.sdk.Chartboost
 import org.json.JSONObject
 import org.prebid.mobile.api.data.AdFormat
@@ -81,7 +80,6 @@ class ChartboostPrebidPluginRenderer internal constructor(
             displayViewListener,
             bidResponse,
             factory,
-            urlNotifier = buildNotifier(),
             location = resolvedLocation(),
             eventListener = config.eventListener,
         )
@@ -98,7 +96,6 @@ class ChartboostPrebidPluginRenderer internal constructor(
             context,
             interstitialControllerListener,
             factory,
-            urlNotifier = buildNotifier(),
             location = resolvedLocation(),
             eventListener = config.eventListener,
         )
@@ -108,20 +105,6 @@ class ChartboostPrebidPluginRenderer internal constructor(
         adUnitConfiguration.isAdType(AdFormat.BANNER) ||
             adUnitConfiguration.isAdType(AdFormat.INTERSTITIAL) ||
             adUnitConfiguration.isAdType(AdFormat.VAST) // VAST is Prebid's video format; covers video interstitial/rewarded
-
-    internal fun buildNotifier(): UrlNotifier {
-        // Capture only the result listener, not the whole config, so the notifier's lambda does not pin
-        // config (and anything a publisher stored on it) alive for the ad's lifetime.
-        val resultListener = config.notificationResultListener
-        return UrlNotifier(
-            eventsEnabled = config.notificationsEnabled,
-            nurlEnabled = config.notificationsEnabled,
-            // burl is gated separately and default off; see ChartboostPrebidConfig.burlEnabled for the
-            // double-billing caveat.
-            burlEnabled = config.burlEnabled,
-            onResult = { url, success -> resultListener?.onResult(url, success) },
-        )
-    }
 
     internal fun resolvedLocation(): String {
         if (config.location.isBlank()) {

@@ -25,7 +25,6 @@ import com.chartboost.sdk.events.ShowEvent
 import org.prebid.mobile.api.exceptions.AdException
 import org.prebid.mobile.api.rendering.PrebidMobileInterstitialControllerInterface
 import org.prebid.mobile.configuration.AdUnitConfiguration
-import org.prebid.mobile.rendering.bidding.data.bid.Bid
 import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerListener
 
@@ -34,35 +33,27 @@ import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerList
  * bridge. Rewarded rides this same path, branched on [AdUnitConfiguration.isRewarded] at load.
  * InterstitialCallback and RewardedCallback are siblings (both extend DismissibleAdCallback), so the
  * adapter implements both and serves as the callback for whichever ad it builds.
- *
- * The controller path skips core's WinNotifier, so the win-side is fired here at load.
  */
 internal class ChartboostFullscreenAdapter(
     private val context: Context,
     private val listener: InterstitialControllerListener,
     private val factory: ChartboostAdFactory,
     private val mainThread: MainThreadExecutor = DefaultMainThreadExecutor,
-    private val urlNotifier: UrlNotifier = UrlNotifier(),
     private val location: String = PREBID_LOCATION,
     private val eventListener: ChartboostPrebidEventListener? = null,
 ) : PrebidMobileInterstitialControllerInterface, InterstitialCallback, RewardedCallback {
 
     private val readyLatch = SingleFireLatch()
     private val displayedLatch = SingleFireLatch()
-    private val winLatch = SingleFireLatch()
-    private val impressionLatch = SingleFireLatch()
     private val failedLatch = SingleFireLatch()
     private val destroyed = SingleFireLatch()
 
     private var ad: Ad? = null
-    private var bid: Bid? = null
     private var adFormat: ChartboostAdFormat = ChartboostAdFormat.INTERSTITIAL
 
     override fun loadAd(adUnitConfiguration: AdUnitConfiguration, bidResponse: BidResponse) {
         adFormat = if (adUnitConfiguration.isRewarded) ChartboostAdFormat.REWARDED else ChartboostAdFormat.INTERSTITIAL
-        val winningBid = bidResponse.winningBid
-        bid = winningBid
-        val adm = winningBid?.admOrNull
+        val adm = bidResponse.winningBid?.admOrNull
         if (adm == null) {
             mainThread.execute { reportLoadFailed(ChartboostErrorMapper.admInvalid()) }
             return
@@ -85,9 +76,6 @@ internal class ChartboostFullscreenAdapter(
             return
         }
         ad = created
-
-        // Controller path skips WinNotifier, so the adapter owns win-side, fired at load.
-        if (winLatch.fire()) urlNotifier.fireWin(winningBid)
     }
 
     override fun show() {
@@ -136,7 +124,6 @@ internal class ChartboostFullscreenAdapter(
 
     override fun onImpressionRecorded(event: ImpressionEvent) = mainThread.execute {
         event.nonBlankAdId?.let { PluginLog.d("fullscreen impression recorded, Chartboost adID=$it") }
-        if (impressionLatch.fire()) bid?.let(urlNotifier::fireImpression)
     }
 
     override fun onAdClicked(event: ClickEvent, error: ClickError?) = mainThread.execute {

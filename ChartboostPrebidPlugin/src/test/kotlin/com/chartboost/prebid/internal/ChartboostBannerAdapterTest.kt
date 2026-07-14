@@ -22,8 +22,6 @@ import com.chartboost.sdk.events.ImpressionEvent
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -49,27 +47,17 @@ class ChartboostBannerAdapterTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val listener = mockk<DisplayViewListener>(relaxed = true)
     private val factory = FakeChartboostAdFactory()
-    private val fired = mutableListOf<String>()
-
-    private fun capturingNotifier() = UrlNotifier(
-        eventsEnabled = true,
-        nurlEnabled = true,
-        burlEnabled = true,
-        scope = CoroutineScope(Dispatchers.Unconfined),
-        httpGet = { fired += it },
-    )
 
     private fun adapter(
         bid: org.prebid.mobile.rendering.bidding.data.bid.Bid? = fakeBid(),
-        notifier: UrlNotifier = UrlNotifier(),
         eventListener: ChartboostPrebidEventListener? = null,
     ) = ChartboostBannerAdapter(
-        context, listener, fakeBidResponse(bid), factory, MainThreadExecutor { it() }, notifier,
+        context, listener, fakeBidResponse(bid), factory, MainThreadExecutor { it() },
         eventListener = eventListener,
     )
 
     private fun adapterWithScheduler(scheduler: TeardownScheduler): ChartboostBannerAdapter =
-        ChartboostBannerAdapter(context, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() }, UrlNotifier(), teardownScheduler = scheduler)
+        ChartboostBannerAdapter(context, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() }, teardownScheduler = scheduler)
 
     @Test
     fun `detach with no re-attach tears the banner down after the delay`() {
@@ -134,7 +122,7 @@ class ChartboostBannerAdapterTest {
         // surface through the delegate, never escape createBannerAdView.
         val throwing = FakeChartboostAdFactory(failCreation = IllegalStateException("Chartboost SDK is not initialized"))
         ChartboostBannerAdapter(
-            context, listener, fakeBidResponse(fakeBid(adm = "<adm>")), throwing, MainThreadExecutor { it() }, UrlNotifier(),
+            context, listener, fakeBidResponse(fakeBid(adm = "<adm>")), throwing, MainThreadExecutor { it() },
         )
         verify { listener.onAdFailed(any()) }
     }
@@ -224,29 +212,19 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
-    fun `impression reports displayed and fires impression-side urls but not win`() {
-        val bid = fakeBid(
-            burl = "https://b",
-            events = mapOf(EVENT_WIN_KEY to "https://w", EVENT_IMP_KEY to "https://i"),
-        )
-        val adapter = adapter(bid = bid, notifier = capturingNotifier())
+    fun `impression reports displayed`() {
+        val adapter = adapter()
         adapter.onImpressionRecorded(mockk<ImpressionEvent>(relaxed = true))
         verify { listener.onAdDisplayed() }
-        assertEquals(listOf("https://b", "https://i"), fired)
     }
 
     @Test
-    fun `repeated impressions report displayed and fire impression urls only once`() {
-        val bid = fakeBid(
-            burl = "https://b",
-            events = mapOf(EVENT_WIN_KEY to "https://w", EVENT_IMP_KEY to "https://i"),
-        )
-        val adapter = adapter(bid = bid, notifier = capturingNotifier())
+    fun `repeated impressions report displayed only once`() {
+        val adapter = adapter()
         val event = mockk<ImpressionEvent>(relaxed = true)
         adapter.onImpressionRecorded(event)
         adapter.onImpressionRecorded(event)
         verify(exactly = 1) { listener.onAdDisplayed() }
-        assertEquals(listOf("https://b", "https://i"), fired)
     }
 
     @Test
