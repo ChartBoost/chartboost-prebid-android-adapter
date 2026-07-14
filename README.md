@@ -4,9 +4,6 @@ A Prebid Mobile plugin renderer that hands Chartboost-flagged winning bids to th
 Monetization SDK for rendering, instead of Prebid's default renderer. Same Monetization SDK surface
 that Chartboost Mediation and MAX drive, plugged into Prebid.
 
-> **Status:** internal / pre-GA. This repo is internal to the Chartboost org while the adapter and the
-> server-side counterpart are built, and flips to public for GA.
-
 ## Minimum Requirements
 
 | Component                | Version |
@@ -29,7 +26,21 @@ On a match, the plugin builds a Chartboost `Banner` / `Interstitial` / `Rewarded
 
 ## Integration
 
-In your app's `build.gradle`, add the adapter plus the SDKs it renders through. The adapter is published
+The Chartboost Monetization SDK and this adapter are hosted on Chartboost's Maven repository, not Maven
+Central, so declare it alongside `mavenCentral()` (which serves Prebid Mobile and coroutines). In your
+`settings.gradle`:
+
+```groovy
+dependencyResolutionManagement {
+    repositories {
+        google()
+        mavenCentral()
+        maven { url "https://cboost.jfrog.io/artifactory/chartboost-ads" }
+    }
+}
+```
+
+Then in your app's `build.gradle`, add the adapter plus the SDKs it renders through. The adapter is published
 `compileOnly` against both SDKs, so your app must depend on them directly:
 
 ```groovy
