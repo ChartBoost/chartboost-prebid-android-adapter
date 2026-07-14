@@ -1,0 +1,22 @@
+# Dependabot opens a PR per available update. The certified Chartboost Monetization and Prebid Mobile
+# SDK pins live in gradle.properties as interpolated versions, so Dependabot never touches them; those
+# are bumped deliberately through the create-release-version workflow.
+version: 2
+updates:
+  # Gradle: plugin versions declared in the root build, plus the library module's (test) dependencies.
+  - package-ecosystem: "gradle"
+    directories:
+      - "/"
+      - "/ChartboostPrebidPlugin"
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - "chauduyphanvu"
+
+  # The actions pinned across the CI and release workflows.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    reviewers:
+      - "chauduyphanvu"
