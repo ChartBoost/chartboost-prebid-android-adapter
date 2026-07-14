@@ -6,21 +6,16 @@
 
 package com.chartboost.prebid.internal
 
+import com.chartboost.prebid.fakes.cacheError
+import com.chartboost.prebid.fakes.showError
 import com.chartboost.sdk.events.CacheError
 import com.chartboost.sdk.events.ExpirationEvent
 import com.chartboost.sdk.events.ShowError
-import io.mockk.every
 import io.mockk.mockk
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ChartboostErrorMapperTest {
-
-    private fun cacheError(code: CacheError.Code): CacheError =
-        mockk<CacheError>().also { every { it.code } returns code }
-
-    private fun showError(code: ShowError.Code): ShowError =
-        mockk<ShowError>().also { every { it.code } returns code }
 
     @Test
     fun `maps INVALID_ADM cache code surfacing the raw code in the message`() {

@@ -10,8 +10,10 @@ import android.content.Context
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
+import com.chartboost.prebid.fakes.cacheError
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
+import com.chartboost.prebid.fakes.showError
 import com.chartboost.sdk.events.CacheError
 import com.chartboost.sdk.events.CacheEvent
 import com.chartboost.sdk.events.ClickEvent
@@ -23,6 +25,7 @@ import com.chartboost.sdk.events.ShowEvent
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -47,12 +50,6 @@ class ChartboostFullscreenAdapterTest {
 
     private fun config(rewarded: Boolean): AdUnitConfiguration =
         mockk<AdUnitConfiguration>(relaxed = true).also { every { it.isRewarded } returns rewarded }
-
-    private fun cacheError(code: CacheError.Code) =
-        mockk<CacheError>().also { every { it.code } returns code }
-
-    private fun showError(code: ShowError.Code) =
-        mockk<ShowError>().also { every { it.code } returns code }
 
     @Test
     fun `loadAd builds an interstitial when the unit is not rewarded`() {
@@ -82,6 +79,15 @@ class ChartboostFullscreenAdapterTest {
     fun `loadAd caches the bid markup`() {
         adapter().loadAd(config(rewarded = false), fakeBidResponse(fakeBid(adm = "<adm>")))
         verify { factory.interstitial.cache("<adm>") }
+    }
+
+    @Test
+    fun `loadAd attaches the Prebid mediation object to the created ad`() {
+        adapter().loadAd(config(rewarded = false), fakeBidResponse(fakeBid(adm = "<adm>")))
+        val expected = MediationFactory.create()
+        assertEquals(expected.mediationType, factory.lastMediation?.mediationType)
+        assertEquals(expected.libraryVersion, factory.lastMediation?.libraryVersion)
+        assertEquals(expected.adapterVersion, factory.lastMediation?.adapterVersion)
     }
 
     @Test
