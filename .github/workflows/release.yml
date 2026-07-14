@@ -2,10 +2,11 @@
 # the public Artifactory repo (chartboost-ads) and cuts a GitHub Release with the AAR attached. Mirrors the
 # Chartboost Mediation adapters' release flow: pushing a `v<version>` tag IS the release.
 #
-# There is no reviewer gate (matching the mediation adapters), so pre-GA safety rests on tag discipline:
-# do not push a v* tag until GA. The tag must equal the computed adapter version (v<printRendererVersion>),
-# so the published coordinate, the BuildConfig.RENDERER_VERSION the Prebid Server echoes back, and the git
-# tag all agree by construction.
+# There is no reviewer gate (matching the mediation adapters), so public-publish safety rests on tag
+# discipline: v* tags are the only path that publishes to the public repo, and pushing one is restricted to
+# admins by a tag ruleset. The tag must equal the computed adapter version (v<printRendererVersion>), so the
+# published coordinate, the BuildConfig.RENDERER_VERSION the Prebid Server echoes back, and the git tag all
+# agree by construction.
 #
 # Required secrets (on the CI environment): JFROG_USER / JFROG_PASS with write access to chartboost-ads.
 name: release
@@ -46,17 +47,18 @@ jobs:
           exit 1
         fi
 
-    - name: Assemble + publish the release to the public repo
+    - name: Test + assemble + publish the release to the public repo
       env:
         JFROG_USER: ${{ secrets.JFROG_USER }}
         JFROG_PASS: ${{ secrets.JFROG_PASS }}
         # Public release: only "true" targets the public chartboost-ads repo.
         CHARTBOOST_PREBID_IS_RELEASE: 'true'
-      # artifactoryPublish depends on assembleRelease + verifyPublishedVersion; the computed version equals
-      # the tag (asserted above), so no -PRENDERER_VERSION pin is needed.
-      run: ./gradlew :ChartboostPrebidPlugin:artifactoryPublish
+      # `ci` runs the unit tests + assembleRelease + verifyPublishedVersion before artifactoryPublish, so a
+      # tagged public release can never publish untested code. The computed version equals the tag (asserted
+      # above), so no -PRENDERER_VERSION pin is needed.
+      run: ./gradlew ci :ChartboostPrebidPlugin:artifactoryPublish
 
     - name: Create the GitHub Release
-      uses: ncipollo/release-action@v1
+      uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
       with:
         artifacts: ChartboostPrebidPlugin/build/outputs/aar/*.aar

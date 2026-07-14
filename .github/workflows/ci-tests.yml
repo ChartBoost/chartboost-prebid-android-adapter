@@ -6,8 +6,15 @@ on:
     branches:
       - 'main'
       - 'prerelease/**'
+  # Also run on pushes to main, so a direct push is verified the same way a PR is.
+  push:
+    branches:
+      - 'main'
   # Manual trigger from the Github Actions tab
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   tests:
