@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 #
+# Copyright (c) 2026 Chartboost, Inc.
+#
+# Licensed under the MIT License.
+#
 # Computes the next release-candidate version for the Chartboost Prebid adapter, mirroring the Chartboost
 # Mediation adapters' convention: "<base version>-rc<N>", where N auto-increments. It queries the private
 # Artifactory for every existing "-rc" of the current base version and returns the highest N plus one (rc1
