@@ -188,12 +188,27 @@ afterEvaluate {
         }
     }
 
+    // Guards against a hand-run publish landing a release-candidate build on the public repo: the
+    // -PprebidArtifactoryRepoKey override beats the CHARTBOOST_PREBID_IS_RELEASE flag (see above), so a
+    // fat-fingered invocation could otherwise point an RC version at the public "chartboost-ads" repo.
+    val verifyPublicReleaseVersion = tasks.register("verifyPublicReleaseVersion") {
+        doLast {
+            val isRcVersion = rendererVersion.contains("-rc")
+            require(!(artifactoryRepoKey == publicRepoKey && isRcVersion)) {
+                "Refusing to publish RC version '$rendererVersion' to the public repo '$publicRepoKey'. " +
+                    "RCs are private-only; drop the -PprebidArtifactoryRepoKey override or publish a " +
+                    "non-RC version."
+            }
+        }
+    }
+
     tasks.named<org.jfrog.gradle.plugin.artifactory.task.ArtifactoryTask>("artifactoryPublish") {
         publications(publishing.publications.getByName("release"))
         // ArtifactoryTask is not an AbstractPublishToMaven, so the configureEach below doesn't reach it.
         // The publication points at a fixed AAR path, so wire the build explicitly or a stale/missing AAR
-        // gets published. verifyPublishedVersion gates the publish on coordinate/binary version agreement.
-        dependsOn("assembleRelease", verifyPublishedVersion)
+        // gets published. verifyPublishedVersion gates the publish on coordinate/binary version agreement;
+        // verifyPublicReleaseVersion gates it on never landing an RC on the public repo.
+        dependsOn("assembleRelease", verifyPublishedVersion, verifyPublicReleaseVersion)
         // Surface the destination in the build log: this task can target a public repo, so an accidental
         // public publish should be obvious in CI output rather than silent.
         doFirst {

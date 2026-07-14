@@ -48,12 +48,13 @@ jobs:
         version="$(./scripts/get_rc_version.sh)"
         echo "version=${version}" >> "$GITHUB_OUTPUT"
 
-    - name: Assemble + publish the release candidate to the private repo
+    - name: Test + assemble + publish the release candidate to the private repo
       env:
         JFROG_USER: ${{ secrets.JFROG_USER }}
         JFROG_PASS: ${{ secrets.JFROG_PASS }}
         # Private RC publish: the gradle config treats anything other than "true" as a private publish.
         CHARTBOOST_PREBID_IS_RELEASE: 'false'
-      # artifactoryPublish depends on assembleRelease + verifyPublishedVersion (wired in the module build),
-      # so it builds a fresh AAR and gates on coordinate/binary version agreement before publishing.
-      run: ./gradlew :ChartboostPrebidPlugin:artifactoryPublish -PRENDERER_VERSION=${{ steps.rc.outputs.version }}
+        VERSION: ${{ steps.rc.outputs.version }}
+      # `ci` runs the unit tests + assembleRelease + verifyPublishedVersion before artifactoryPublish (wired
+      # in the module build), so an RC can never publish untested code.
+      run: ./gradlew ci :ChartboostPrebidPlugin:artifactoryPublish "-PRENDERER_VERSION=${VERSION}"

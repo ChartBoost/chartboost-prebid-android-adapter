@@ -23,12 +23,13 @@ permissions:
 
 jobs:
   auto-release:
-    # Only on a merged release-prep PR (head branch release/<version>) or a manual dispatch. A plain PR
-    # close without merge is ignored.
+    # Only on a merged release-prep PR (head branch release/<version>, opened from this repo, not a fork) or
+    # a manual dispatch. A plain PR close without merge is ignored.
     if: >-
       github.event_name == 'workflow_dispatch' ||
       (github.event.pull_request.merged == true &&
-       startsWith(github.event.pull_request.head.ref, 'release/'))
+       startsWith(github.event.pull_request.head.ref, 'release/') &&
+       github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     concurrency:
       group: auto-release
