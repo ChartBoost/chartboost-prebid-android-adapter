@@ -31,7 +31,11 @@ class ChartboostPrebidConfigTest {
 
     @Test
     fun `builder with no setters matches the default config`() {
-        assertEquals(ChartboostPrebidConfig(), ChartboostPrebidConfig.Builder().build())
+        val default = ChartboostPrebidConfig()
+        val built = ChartboostPrebidConfig.Builder().build()
+        assertEquals(default.location, built.location)
+        assertEquals(default.logLevel, built.logLevel)
+        assertEquals(default.eventListener, built.eventListener)
     }
 
     @Test

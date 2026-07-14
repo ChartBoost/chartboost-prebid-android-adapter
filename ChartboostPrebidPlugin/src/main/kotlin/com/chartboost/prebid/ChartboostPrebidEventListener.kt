@@ -21,20 +21,20 @@ import org.prebid.mobile.api.exceptions.AdException
  * [onAdFailed], so do not treat a missing display as a guaranteed failure callback.
  */
 interface ChartboostPrebidEventListener {
-    fun onAdLoaded(format: ChartboostAdFormat)
+    fun onAdLoaded(format: ChartboostAdFormat) {}
 
     /**
      * The ad became visible. Fired on the Chartboost show event for [ChartboostAdFormat.INTERSTITIAL] and
      * [ChartboostAdFormat.REWARDED], and on the first recorded impression for [ChartboostAdFormat.BANNER]
      * (the banner path has no separate show signal). Account for that difference in display-timing metrics.
      */
-    fun onAdDisplayed(format: ChartboostAdFormat)
+    fun onAdDisplayed(format: ChartboostAdFormat) {}
 
-    fun onAdClicked(format: ChartboostAdFormat)
+    fun onAdClicked(format: ChartboostAdFormat) {}
 
-    fun onAdFailed(format: ChartboostAdFormat, error: AdException)
+    fun onAdFailed(format: ChartboostAdFormat, error: AdException) {}
 
-    fun onAdDismissed(format: ChartboostAdFormat)
+    fun onAdDismissed(format: ChartboostAdFormat) {}
 
-    fun onUserEarnedReward(format: ChartboostAdFormat)
+    fun onUserEarnedReward(format: ChartboostAdFormat) {}
 }

@@ -38,10 +38,12 @@ val rendererVersion: String = ((findProperty("RENDERER_VERSION") as String?) ?: 
     "${prebidMajor * prebidMajorScale + monMajor}.$monMinor.${monPatch * monPatchScale + adapterRevision}"
 }).also {
     // Registered with Prebid Mobile, so it must be canonical X.Y.Z semver, optionally with a release-
-    // candidate "-rc<N>" pre-release tail (N ≥ 1) used for private pre-GA RC publishes. A bad value (empty,
-    // leading zeros, non-numeric) registers a renderer version the server's echo can never reproduce,
-    // silently falling back to Prebid's default renderer. The "-rc<N>" tail rides through that same echo, so
-    // an RC client and an RC-stamped server still match by construction.
+    // candidate "-rc<N>" pre-release tail (N ≥ 1). By convention the "-rc<N>" versions ship privately and
+    // canonical versions publicly; the repo choice itself is gated by CHARTBOOST_PREBID_IS_RELEASE in the
+    // module's publishing block. A bad value (empty, leading zeros, non-numeric) registers a renderer
+    // version the server's echo can never reproduce, silently falling back to Prebid's default renderer.
+    // The "-rc<N>" tail rides through that same echo, so an RC client and an RC-stamped server still match
+    // by construction.
     require(it.matches(Regex("""^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-rc[1-9]\d*)?$"""))) {
         "RENDERER_VERSION '$it' is not canonical X.Y.Z semver with an optional -rc<N> tail (no leading zeros)."
     }

@@ -66,6 +66,20 @@ class ChartboostPrebidPluginRendererTest {
     }
 
     @Test
+    fun `supports interstitial rendering`() {
+        val config = mockk<AdUnitConfiguration>(relaxed = true)
+        every { config.isAdType(AdFormat.INTERSTITIAL) } returns true
+        assertTrue(renderer.isSupportRenderingFor(config))
+    }
+
+    @Test
+    fun `supports VAST rendering`() {
+        val config = mockk<AdUnitConfiguration>(relaxed = true)
+        every { config.isAdType(AdFormat.VAST) } returns true
+        assertTrue(renderer.isSupportRenderingFor(config))
+    }
+
+    @Test
     fun `does not support native rendering`() {
         val config = mockk<AdUnitConfiguration>(relaxed = true) // every isAdType defaults to false
         assertFalse(renderer.isSupportRenderingFor(config))
@@ -127,6 +141,23 @@ class ChartboostPrebidPluginRendererTest {
     fun `banner adapter receives the default location when config uses the default`() {
         val factory = FakeChartboostAdFactory()
         val r = ChartboostPrebidPluginRenderer(factory)
+        r.createBannerAdView(
+            context,
+            mockk<DisplayViewListener>(relaxed = true),
+            null,
+            mockk(relaxed = true),
+            fakeBidResponse(fakeBid(adm = "<adm>", width = 320, height = 50)),
+        )
+        assertEquals(PREBID_LOCATION, factory.lastLocation)
+    }
+
+    @Test
+    fun `banner adapter receives the default location when config location is blank`() {
+        val factory = FakeChartboostAdFactory()
+        val r = ChartboostPrebidPluginRenderer(
+            factory,
+            config = ChartboostPrebidConfig(location = "  "),
+        )
         r.createBannerAdView(
             context,
             mockk<DisplayViewListener>(relaxed = true),

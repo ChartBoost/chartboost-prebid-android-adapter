@@ -179,7 +179,7 @@ internal class ChartboostBannerAdapter(
         else removeCallbacks(action)
     }
 
-    private companion object {
-        const val TEARDOWN_DELAY_MS = 1_000L
+    companion object {
+        internal const val TEARDOWN_DELAY_MS = 1_000L
     }
 }

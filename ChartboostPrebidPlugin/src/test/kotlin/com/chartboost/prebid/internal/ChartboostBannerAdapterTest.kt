@@ -6,11 +6,16 @@
 
 package com.chartboost.prebid.internal
 
+import android.app.Activity
 import android.content.Context
+import android.os.Looper
+import android.view.ViewGroup
+import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
+import com.chartboost.prebid.fakes.cacheError
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
 import com.chartboost.sdk.ads.Banner
@@ -22,11 +27,15 @@ import com.chartboost.sdk.events.ImpressionEvent
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
+import java.time.Duration
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
+import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 private class FakeTeardownScheduler : TeardownScheduler {
@@ -47,6 +56,7 @@ class ChartboostBannerAdapterTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val listener = mockk<DisplayViewListener>(relaxed = true)
     private val factory = FakeChartboostAdFactory()
+    private val teardownDelay: Duration = Duration.ofMillis(ChartboostBannerAdapter.TEARDOWN_DELAY_MS)
 
     private fun adapter(
         bid: org.prebid.mobile.rendering.bidding.data.bid.Bid? = fakeBid(),
@@ -58,6 +68,56 @@ class ChartboostBannerAdapterTest {
 
     private fun adapterWithScheduler(scheduler: TeardownScheduler): ChartboostBannerAdapter =
         ChartboostBannerAdapter(context, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() }, teardownScheduler = scheduler)
+
+    /**
+     * Builds an adapter with no injected [TeardownScheduler] (the production default) and attaches it to a
+     * real Robolectric window, so [android.view.View.postDelayed]/[android.view.View.removeCallbacks] route
+     * through a real Handler bound to the main looper instead of the view's pre-attach run queue. The
+     * returned container is the real parent, so tests drive attach/detach through addView/removeView —
+     * the actual signal the production teardown Runnable's own isAttachedToWindow re-check depends on.
+     */
+    private fun productionAdapter(): Pair<ViewGroup, ChartboostBannerAdapter> {
+        // The real window attachment below runs a genuine measure/layout pass, which reads the mocked
+        // banner's layoutParams; the class-level stub returns null (only so ViewGroup.addView accepts it),
+        // so give it real params here for the one scenario that actually measures the tree.
+        every { factory.banner.layoutParams } returns FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
+        val adapter = ChartboostBannerAdapter(context, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() })
+        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val content = activity.findViewById<ViewGroup>(android.R.id.content)
+        content.addView(adapter)
+        return content to adapter
+    }
+
+    @Test
+    fun `detach with no injected scheduler tears the banner down after the real delay`() {
+        val (content, adapter) = productionAdapter()
+        content.removeView(adapter)
+        shadowOf(Looper.getMainLooper()).idleFor(teardownDelay)
+        verify { factory.banner.detach() }
+    }
+
+    @Test
+    fun `a banner re-attached before the delay is never torn down by the stale timer when no scheduler is injected`() {
+        val (content, adapter) = productionAdapter()
+        content.removeView(adapter)
+        content.addView(adapter)
+        shadowOf(Looper.getMainLooper()).idleFor(teardownDelay.multipliedBy(2))
+        verify(exactly = 0) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `rapid detach-attach cycles tear down exactly once at the final detach's deadline`() {
+        val quarter = teardownDelay.dividedBy(4)
+        val (content, adapter) = productionAdapter()
+        content.removeView(adapter) // stale timer due at t=4q
+        shadowOf(Looper.getMainLooper()).idleFor(quarter.multipliedBy(2)) // t=2q
+        content.addView(adapter)
+        content.removeView(adapter) // final deadline at t=6q
+        shadowOf(Looper.getMainLooper()).idleFor(quarter.multipliedBy(3)) // t=5q: past the stale deadline
+        verify(exactly = 0) { factory.banner.detach() }
+        shadowOf(Looper.getMainLooper()).idleFor(quarter.multipliedBy(2)) // t=7q: past the final deadline
+        verify(exactly = 1) { factory.banner.detach() }
+    }
 
     @Test
     fun `detach with no re-attach tears the banner down after the delay`() {
@@ -99,15 +159,13 @@ class ChartboostBannerAdapterTest {
         adapter.onDetachedFromWindow() // schedules first runnable
         val firstAction = requireNotNull(scheduler.scheduled)
         adapter.onDetachedFromWindow() // must cancel the first before scheduling a second
-        assert(scheduler.cancelledActions.contains(firstAction)) {
-            "expected the first scheduled runnable to be passed to cancel() on the second detach"
-        }
+        assertTrue(
+            "expected the first scheduled runnable to be passed to cancel() on the second detach",
+            scheduler.cancelledActions.contains(firstAction),
+        )
         scheduler.runPending() // only the second runnable is still pending
         verify(exactly = 1) { factory.banner.detach() }
     }
-
-    private fun cacheError(code: CacheError.Code) =
-        mockk<CacheError>().also { every { it.code } returns code }
 
     @Test
     fun `reports failure through the listener when the markup is empty`() {
@@ -132,6 +190,15 @@ class ChartboostBannerAdapterTest {
         adapter(bid = fakeBid(adm = "<adm>", width = 300, height = 250))
         verify { factory.banner.cache("<adm>") }
         assertEquals(Banner.BannerSize.MEDIUM, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `banner creation attaches the Prebid mediation object`() {
+        adapter(bid = fakeBid(adm = "<adm>"))
+        val expected = MediationFactory.create()
+        assertEquals(expected.mediationType, factory.lastMediation?.mediationType)
+        assertEquals(expected.libraryVersion, factory.lastMediation?.libraryVersion)
+        assertEquals(expected.adapterVersion, factory.lastMediation?.adapterVersion)
     }
 
     @Test

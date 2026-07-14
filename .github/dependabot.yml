@@ -10,13 +10,13 @@ updates:
       - "/ChartboostPrebidPlugin"
     schedule:
       interval: "weekly"
-    reviewers:
-      - "chauduyphanvu"
 
   # The actions pinned across the CI and release workflows.
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
-    reviewers:
-      - "chauduyphanvu"
+    ignore:
+      # Dependabot cannot reach this private repo (git_dependencies_not_reachable), which fails every run
+      # for this ecosystem. loopme-secrets-scan.yml references it directly; bump it there by hand.
+      - dependency-name: "loopme/secrets"

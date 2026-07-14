@@ -16,13 +16,11 @@ internal fun fakeBid(
     adm: String? = "<chartboost-adm>",
     width: Int = 320,
     height: Int = 50,
-    price: Double = 1.50,
 ): Bid {
     val bid = mockk<Bid>(relaxed = true)
     every { bid.adm } returns adm
     every { bid.width } returns width
     every { bid.height } returns height
-    every { bid.price } returns price
     return bid
 }
 
