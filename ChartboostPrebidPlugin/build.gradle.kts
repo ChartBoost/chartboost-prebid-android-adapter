@@ -76,11 +76,11 @@ dependencies {
     // against them but does not bundle them.
     compileOnly("com.chartboost:chartboost-sdk:$chartboostSdkVersion")
     compileOnly("org.prebid:prebid-mobile-sdk:$prebidMobileVersion")
-    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+    compileOnly("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
 
     testImplementation("com.chartboost:chartboost-sdk:$chartboostSdkVersion")
     testImplementation("org.prebid:prebid-mobile-sdk:$prebidMobileVersion")
-    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.11.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.13")
     testImplementation("org.robolectric:robolectric:4.14.1")
