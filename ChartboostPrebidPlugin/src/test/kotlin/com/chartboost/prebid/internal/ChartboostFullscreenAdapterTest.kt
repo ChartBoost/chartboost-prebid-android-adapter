@@ -17,22 +17,16 @@ import com.chartboost.sdk.events.CacheEvent
 import com.chartboost.sdk.events.ClickEvent
 import com.chartboost.sdk.events.DismissEvent
 import com.chartboost.sdk.events.ExpirationEvent
-import com.chartboost.sdk.events.ImpressionEvent
 import com.chartboost.sdk.events.RewardEvent
 import com.chartboost.sdk.events.ShowError
 import com.chartboost.sdk.events.ShowEvent
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.prebid.mobile.configuration.AdUnitConfiguration
-import org.prebid.mobile.rendering.bidding.data.bid.Bid
-import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerListener
 
 class ChartboostFullscreenAdapterTest {
@@ -40,21 +34,11 @@ class ChartboostFullscreenAdapterTest {
     private val context = mockk<Context>(relaxed = true)
     private val listener = mockk<InterstitialControllerListener>(relaxed = true)
     private val factory = FakeChartboostAdFactory()
-    private val fired = mutableListOf<String>()
-
-    private fun capturingNotifier() = UrlNotifier(
-        eventsEnabled = true,
-        nurlEnabled = true,
-        burlEnabled = true,
-        scope = CoroutineScope(Dispatchers.Unconfined),
-        httpGet = { fired += it },
-    )
 
     private fun adapter(
-        notifier: UrlNotifier = UrlNotifier(),
         eventListener: ChartboostPrebidEventListener? = null,
     ) = ChartboostFullscreenAdapter(
-        context, listener, factory, MainThreadExecutor { it() }, notifier, eventListener = eventListener,
+        context, listener, factory, MainThreadExecutor { it() }, eventListener = eventListener,
     )
 
     // ExpirationReason lives in the SDK's internal package and cannot be named here; a relaxed mock
@@ -89,7 +73,7 @@ class ChartboostFullscreenAdapterTest {
         // Constructing the ad throws when the Monetization SDK was never started; loadAd must report it
         // through the listener, never let it escape.
         val throwing = FakeChartboostAdFactory(failCreation = IllegalStateException("Chartboost SDK is not initialized"))
-        ChartboostFullscreenAdapter(context, listener, throwing, MainThreadExecutor { it() }, UrlNotifier())
+        ChartboostFullscreenAdapter(context, listener, throwing, MainThreadExecutor { it() })
             .loadAd(config(rewarded = false), fakeBidResponse())
         verify { listener.onInterstitialFailedToLoad(any()) }
     }
@@ -167,22 +151,6 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
-    fun `fires win-side at load when notifications are enabled`() {
-        val bid = fakeBid(nurl = "https://n", events = mapOf(EVENT_WIN_KEY to "https://w"))
-        adapter(capturingNotifier()).loadAd(config(false), fakeBidResponse(bid))
-        assertEquals(listOf("https://n", "https://w"), fired)
-    }
-
-    @Test
-    fun `fires impression-side on impression when notifications are enabled`() {
-        val bid = fakeBid(burl = "https://b", events = mapOf(EVENT_IMP_KEY to "https://i"))
-        val adapter = adapter(capturingNotifier()).also { it.loadAd(config(false), fakeBidResponse(bid)) }
-        fired.clear() // drop the win-side fired at load
-        adapter.onImpressionRecorded(mockk<ImpressionEvent>(relaxed = true))
-        assertEquals(listOf("https://b", "https://i"), fired)
-    }
-
-    @Test
     fun `event listener is notified of load with the interstitial format`() {
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
         val adapter = adapter(eventListener = events).also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
@@ -252,17 +220,6 @@ class ChartboostFullscreenAdapterTest {
         adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null) // late success must not resurrect it
         verify(exactly = 0) { listener.onInterstitialReadyForDisplay() }
         verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
-    }
-
-    @Test
-    fun `onImpressionRecorded fires impression urls only once when redelivered`() {
-        val bid = fakeBid(burl = "https://b", events = mapOf(EVENT_IMP_KEY to "https://i"))
-        val adapter = adapter(capturingNotifier()).also { it.loadAd(config(false), fakeBidResponse(bid)) }
-        fired.clear() // drop the win-side fired at load
-        val event = mockk<ImpressionEvent>(relaxed = true)
-        adapter.onImpressionRecorded(event)
-        adapter.onImpressionRecorded(event)
-        assertEquals(listOf("https://b", "https://i"), fired)
     }
 
     @Test

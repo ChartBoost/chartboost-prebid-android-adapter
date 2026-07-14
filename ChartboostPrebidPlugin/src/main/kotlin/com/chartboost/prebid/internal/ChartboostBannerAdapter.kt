@@ -22,7 +22,6 @@ import com.chartboost.sdk.events.ImpressionEvent
 import com.chartboost.sdk.events.ShowError
 import com.chartboost.sdk.events.ShowEvent
 import org.prebid.mobile.api.exceptions.AdException
-import org.prebid.mobile.rendering.bidding.data.bid.Bid
 import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 
@@ -31,8 +30,7 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  * returned by createBannerAdView and the SDK's BannerCallback, holding one [Banner] as its child.
  *
  * The banner path has no separate loadAd, so caching is kicked off at construction. We report "loaded" on
- * cache success (not on show, which re-fires under refresh) and "displayed" on impression. On the Android
- * banner path core's WinNotifier already fired the win before handoff, so we only fire impression-side.
+ * cache success (not on show, which re-fires under refresh) and "displayed" on impression.
  */
 @SuppressLint("ViewConstructor")
 internal class ChartboostBannerAdapter(
@@ -41,16 +39,13 @@ internal class ChartboostBannerAdapter(
     bidResponse: BidResponse,
     private val factory: ChartboostAdFactory,
     private val mainThread: MainThreadExecutor = DefaultMainThreadExecutor,
-    private val urlNotifier: UrlNotifier = UrlNotifier(),
     private val location: String = PREBID_LOCATION,
     private val teardownScheduler: TeardownScheduler? = null,
     private var eventListener: ChartboostPrebidEventListener? = null,
 ) : FrameLayout(context), BannerCallback {
 
-    private var bid: Bid? = bidResponse.winningBid
     private val loadedLatch = SingleFireLatch()
     private val displayedLatch = SingleFireLatch()
-    private val impressionLatch = SingleFireLatch()
     private val failedLatch = SingleFireLatch()
     private val destroyed = SingleFireLatch()
 
@@ -58,7 +53,7 @@ internal class ChartboostBannerAdapter(
     private var teardownAction: Runnable? = null
 
     init {
-        val winningBid = bid
+        val winningBid = bidResponse.winningBid
         val adm = winningBid?.admOrNull
         if (adm == null) {
             // Never return null/throw from createBannerAdView; fail through the loading delegate.
@@ -121,9 +116,6 @@ internal class ChartboostBannerAdapter(
             displayViewListener.onAdDisplayed()
             eventListener?.onAdDisplayed(ChartboostAdFormat.BANNER)
         }
-        // Impression-side only: core's WinNotifier already fired the win on the Android banner path before
-        // handoff, so firing win here would double-count.
-        if (impressionLatch.fire()) bid?.let(urlNotifier::fireImpression)
     }
 
     override fun onAdClicked(event: ClickEvent, error: ClickError?) = mainThread.execute {
@@ -168,9 +160,8 @@ internal class ChartboostBannerAdapter(
             if (!isAttachedToWindow && destroyed.fire()) {
                 banner?.detach()
                 banner = null
-                // Also drop the publisher-supplied references so a RecyclerView-cached (recycled-but-not-GC'd)
-                // view doesn't pin them; every use of both is already null-safe.
-                bid = null
+                // Also drop the publisher-supplied listener so a RecyclerView-cached (recycled-but-not-GC'd)
+                // view doesn't pin it; every use is already null-safe.
                 eventListener = null
             }
         }

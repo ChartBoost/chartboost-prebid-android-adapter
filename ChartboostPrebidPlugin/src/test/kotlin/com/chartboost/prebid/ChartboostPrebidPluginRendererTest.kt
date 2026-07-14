@@ -107,33 +107,6 @@ class ChartboostPrebidPluginRendererTest {
     }
 
     @Test
-    fun `buildNotifier has eventsEnabled and nurlEnabled true when notifications are enabled`() {
-        val notifier = ChartboostPrebidPluginRenderer(
-            ChartboostPrebidConfig(notificationsEnabled = true)
-        ).buildNotifier()
-        assertTrue(notifier.eventsEnabled)
-        assertTrue(notifier.nurlEnabled)
-        assertFalse(notifier.burlEnabled)
-    }
-
-    @Test
-    fun `buildNotifier has all flags false when notifications are disabled`() {
-        val notifier = ChartboostPrebidPluginRenderer(ChartboostPrebidConfig()).buildNotifier()
-        assertFalse(notifier.eventsEnabled)
-        assertFalse(notifier.nurlEnabled)
-        assertFalse(notifier.burlEnabled)
-    }
-
-    @Test
-    fun `buildNotifier enables burl independently when burl is enabled`() {
-        val notifier = ChartboostPrebidPluginRenderer(ChartboostPrebidConfig(burlEnabled = true)).buildNotifier()
-        assertTrue(notifier.burlEnabled)
-        // burl is gated separately from notifications, so the win/imp event flags stay off.
-        assertFalse(notifier.eventsEnabled)
-        assertFalse(notifier.nurlEnabled)
-    }
-
-    @Test
     fun `banner adapter receives the configured location`() {
         val factory = FakeChartboostAdFactory()
         val r = ChartboostPrebidPluginRenderer(

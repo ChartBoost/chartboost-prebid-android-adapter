@@ -17,18 +17,12 @@ internal fun fakeBid(
     width: Int = 320,
     height: Int = 50,
     price: Double = 1.50,
-    nurl: String? = null,
-    burl: String? = null,
-    events: Map<String, String> = emptyMap(),
 ): Bid {
     val bid = mockk<Bid>(relaxed = true)
     every { bid.adm } returns adm
     every { bid.width } returns width
     every { bid.height } returns height
     every { bid.price } returns price
-    every { bid.nurl } returns nurl
-    every { bid.burl } returns burl
-    every { bid.events } returns events
     return bid
 }
 
