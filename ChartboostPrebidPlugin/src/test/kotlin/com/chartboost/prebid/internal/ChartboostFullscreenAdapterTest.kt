@@ -263,6 +263,16 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
+    fun `loadAd after destroy does not build an ad`() {
+        // destroy() releases the context so a Prebid-retained controller cannot pin an Activity; a late
+        // loadAd on the discarded controller must be a no-op rather than resurrecting it.
+        val adapter = adapter().also { it.destroy() }
+        adapter.loadAd(config(rewarded = false), fakeBidResponse())
+        assertFalse(factory.createdInterstitial)
+        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
+    }
+
+    @Test
     fun `a reward earned after destroy still reaches the listener`() {
         // clearCache() does not tear down a showing fullscreen ad, so a reward the user genuinely earns
         // after the host called destroy() (e.g. from its Activity onDestroy) must still be granted.
