@@ -35,7 +35,7 @@ import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerList
  * adapter implements both and serves as the callback for whichever ad it builds.
  */
 internal class ChartboostFullscreenAdapter(
-    private val context: Context,
+    context: Context,
     private val listener: InterstitialControllerListener,
     private val factory: ChartboostAdFactory,
     private val mainThread: MainThreadExecutor = DefaultMainThreadExecutor,
@@ -48,10 +48,23 @@ internal class ChartboostFullscreenAdapter(
     private val failedLatch = SingleFireLatch()
     private val destroyed = SingleFireLatch()
 
+    // Released on destroy(): the factory needs the context only to construct the ad, and Prebid can retain
+    // a discarded controller, so holding a publisher-supplied Activity context past destroy() would pin
+    // that Activity.
+    private var context: Context? = context
+
     private var ad: Ad? = null
     private var adFormat: ChartboostAdFormat = ChartboostAdFormat.INTERSTITIAL
 
     override fun loadAd(adUnitConfiguration: AdUnitConfiguration, bidResponse: BidResponse) {
+        val context = this.context
+        if (context == null) {
+            // destroy() already ran, so Prebid discarded this controller; a late loadAd must not resurrect
+            // it (and would re-pin the released context). Silent-drop mirrors the destroyed gate in
+            // onAdLoaded.
+            PluginLog.w("fullscreen loadAd after destroy(); ignoring")
+            return
+        }
         adFormat = if (adUnitConfiguration.isRewarded) ChartboostAdFormat.REWARDED else ChartboostAdFormat.INTERSTITIAL
         val adm = bidResponse.winningBid?.admOrNull
         if (adm == null) {
@@ -86,10 +99,13 @@ internal class ChartboostFullscreenAdapter(
         // The released Monetization SDK (9.12.x) exposes no destroy() for fullscreen ads, so clearCache()
         // is the available teardown. clearCache() only clears the loaded-ad state; it does NOT tear down an
         // ad that is already showing, so post-show engagement signals (impression/click/dismiss/reward) keep
-        // arriving and must still be forwarded. Only the load-completion path is gated on `destroyed` (see
-        // onAdLoaded), to stop a late cache result from reporting READY after the controller was discarded.
+        // arriving and must still be forwarded — which is why the listeners are deliberately retained here.
+        // Only the load-completion path is gated on `destroyed` (see onAdLoaded), to stop a late cache
+        // result from reporting READY after the controller was discarded. The context, by contrast, has no
+        // post-destroy use, so drop it and stop pinning a publisher Activity.
         ad?.clearCache()
         ad = null
+        context = null
         destroyed.fire()
     }
 
