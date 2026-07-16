@@ -29,15 +29,17 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 /**
  * Prebid Mobile plugin renderer that hands Chartboost-flagged winning bids to the Chartboost Monetization
  * SDK for rendering. A thin, stateless-per-load bridge: each ad unit maps to one renderer-created adapter
- * with no shared mutable state. Register it once via [ChartboostPrebidRenderer.register].
+ * with no shared mutable state. Registered via [ChartboostPrebidRenderer.register]; Prebid drives it
+ * purely through the [PrebidMobilePluginRenderer] interface, so the type itself is internal — publishers
+ * read the name/version through [ChartboostPrebidRenderer].
  */
-class ChartboostPrebidPluginRenderer internal constructor(
+internal class ChartboostPrebidPluginRenderer(
     private val factory: ChartboostAdFactory,
     private val bidderToken: () -> String? = { Chartboost.getBidderToken() },
     private val config: ChartboostPrebidConfig = ChartboostPrebidConfig(),
 ) : PrebidMobilePluginRenderer {
 
-    internal constructor(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) : this(DefaultChartboostAdFactory(), config = config)
+    constructor(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) : this(DefaultChartboostAdFactory(), config = config)
 
     init {
         PluginLog.level = config.logLevel
