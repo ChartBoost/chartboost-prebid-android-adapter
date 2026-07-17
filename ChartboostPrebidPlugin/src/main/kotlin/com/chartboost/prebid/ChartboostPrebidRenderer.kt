@@ -39,6 +39,18 @@ object ChartboostPrebidRenderer {
     }
 
     /**
+     * Removes the Chartboost plugin renderer from Prebid Mobile's registry, the counterpart to [register].
+     * Prebid evicts by renderer name, so this drops whatever renderer is registered under the Chartboost
+     * name; it is a no-op when nothing is registered. Call it to tear down a registration whose
+     * [ChartboostPrebidConfig.eventListener] captures an Activity, so the listener does not outlive it.
+     * The renderer's constructors are internal, so a consumer cannot build one to pass to Prebid directly;
+     * this is the only supported way to unregister.
+     */
+    fun unregister() {
+        PrebidMobilePluginRegister.getInstance().unregisterPlugin(ChartboostPrebidPluginRenderer())
+    }
+
+    /**
      * Logs the registered renderer name and version at INFO level. Use during integration to confirm
      * the client-side values match the Prebid Server adapter stamp; a mismatch causes silent fallback
      * to Prebid's default renderer.
