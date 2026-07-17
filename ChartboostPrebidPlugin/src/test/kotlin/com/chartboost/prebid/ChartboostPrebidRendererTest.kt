@@ -83,4 +83,19 @@ class ChartboostPrebidRendererTest {
 
         assertEquals("MyPlacement", (registered.captured as ChartboostPrebidPluginRenderer).resolvedLocation())
     }
+
+    @Test
+    fun `unregister removes what register added`() {
+        // Exercise Prebid's real registry (a process-global name-keyed map) so the test proves the actual
+        // round-trip invariant: unregister evicts the same entry register inserted, not just that some
+        // renderer carries the Chartboost name. The mid-assert guards against register silently no-op-ing,
+        // which would make the final assert vacuously pass.
+        val registry = PrebidMobilePluginRegister.getInstance()
+        ChartboostPrebidRenderer.register()
+        assertTrue(registry.containsPlugin(ChartboostPrebidPluginRenderer.NAME))
+
+        ChartboostPrebidRenderer.unregister()
+
+        assertFalse(registry.containsPlugin(ChartboostPrebidPluginRenderer.NAME))
+    }
 }
