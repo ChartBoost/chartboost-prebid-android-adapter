@@ -28,7 +28,7 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
-class ChartboostPrebidRendererTest {
+class ChartboostPrebidAdapterTest {
 
     @After
     fun unmockRegister() {
@@ -41,61 +41,61 @@ class ChartboostPrebidRendererTest {
     }
 
     @Test
-    fun `rendererName exposes the name the client sends to Prebid Server`() {
-        assertEquals("Chartboost-Android-SDK", ChartboostPrebidRenderer.rendererName)
+    fun `adapterName exposes the name the client sends to Prebid Server`() {
+        assertEquals("Chartboost-Android-SDK", ChartboostPrebidAdapter.adapterName)
     }
 
     @Test
-    fun `rendererVersion exposes the version the client sends to Prebid Server`() {
-        assertEquals(BuildConfig.RENDERER_VERSION, ChartboostPrebidRenderer.rendererVersion)
+    fun `adapterVersion exposes the version the client sends to Prebid Server`() {
+        assertEquals(BuildConfig.ADAPTER_VERSION, ChartboostPrebidAdapter.adapterVersion)
     }
 
     @Test
-    fun `matchesServerRendererVersion is true when the server stamp equals the client version`() {
-        assertTrue(ChartboostPrebidRenderer.matchesServerRendererVersion(BuildConfig.RENDERER_VERSION))
+    fun `matchesServerAdapterVersion is true when the server stamp equals the client version`() {
+        assertTrue(ChartboostPrebidAdapter.matchesServerAdapterVersion(BuildConfig.ADAPTER_VERSION))
     }
 
     @Test
-    fun `matchesServerRendererVersion is false on any mismatch including trailing whitespace`() {
-        assertFalse(ChartboostPrebidRenderer.matchesServerRendererVersion("${BuildConfig.RENDERER_VERSION} "))
+    fun `matchesServerAdapterVersion is false on any mismatch including trailing whitespace`() {
+        assertFalse(ChartboostPrebidAdapter.matchesServerAdapterVersion("${BuildConfig.ADAPTER_VERSION} "))
     }
 
     @Test
-    fun `register registers a plugin renderer with Prebid Mobile`() {
+    fun `register registers the adapter with Prebid Mobile`() {
         mockkStatic(PrebidMobilePluginRegister::class)
         val registry = mockk<PrebidMobilePluginRegister>(relaxed = true)
         every { PrebidMobilePluginRegister.getInstance() } returns registry
 
-        ChartboostPrebidRenderer.register()
+        ChartboostPrebidAdapter.register()
 
         verify { registry.registerPlugin(any()) }
     }
 
     @Test
-    fun `register plumbs the supplied config's location into the registered renderer`() {
+    fun `register plumbs the supplied config's location into the registered adapter`() {
         mockkStatic(PrebidMobilePluginRegister::class)
         val registry = mockk<PrebidMobilePluginRegister>(relaxed = true)
         every { PrebidMobilePluginRegister.getInstance() } returns registry
         val registered = slot<PrebidMobilePluginRenderer>()
         every { registry.registerPlugin(capture(registered)) } just Runs
 
-        ChartboostPrebidRenderer.register(ChartboostPrebidConfig(location = "MyPlacement"))
+        ChartboostPrebidAdapter.register(ChartboostPrebidConfig(location = "MyPlacement"))
 
-        assertEquals("MyPlacement", (registered.captured as ChartboostPrebidPluginRenderer).resolvedLocation())
+        assertEquals("MyPlacement", (registered.captured as ChartboostPrebidPluginAdapter).resolvedLocation())
     }
 
     @Test
     fun `unregister removes what register added`() {
         // Exercise Prebid's real registry (a process-global name-keyed map) so the test proves the actual
         // round-trip invariant: unregister evicts the same entry register inserted, not just that some
-        // renderer carries the Chartboost name. The mid-assert guards against register silently no-op-ing,
+        // plugin carries the Chartboost name. The mid-assert guards against register silently no-op-ing,
         // which would make the final assert vacuously pass.
         val registry = PrebidMobilePluginRegister.getInstance()
-        ChartboostPrebidRenderer.register()
-        assertTrue(registry.containsPlugin(ChartboostPrebidPluginRenderer.NAME))
+        ChartboostPrebidAdapter.register()
+        assertTrue(registry.containsPlugin(ChartboostPrebidPluginAdapter.NAME))
 
-        ChartboostPrebidRenderer.unregister()
+        ChartboostPrebidAdapter.unregister()
 
-        assertFalse(registry.containsPlugin(ChartboostPrebidPluginRenderer.NAME))
+        assertFalse(registry.containsPlugin(ChartboostPrebidPluginAdapter.NAME))
     }
 }

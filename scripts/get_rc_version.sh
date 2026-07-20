@@ -26,9 +26,9 @@ REPO_ROOT="$(dirname "${SCRIPT_DIR}")"
 
 # Base version straight from Gradle, so the version formula is never duplicated here. tail -n1 guards against
 # any stray daemon output sneaking onto stdout ahead of the version line.
-BASE_VERSION="$("${REPO_ROOT}/gradlew" -q -p "${REPO_ROOT}" printRendererVersion | tail -n1 | tr -d '[:space:]')"
+BASE_VERSION="$("${REPO_ROOT}/gradlew" -q -p "${REPO_ROOT}" printAdapterVersion | tail -n1 | tr -d '[:space:]')"
 if [ -z "${BASE_VERSION}" ]; then
-  echo "could not resolve the base renderer version from Gradle" >&2
+  echo "could not resolve the base adapter version from Gradle" >&2
   exit 1
 fi
 RELEASE_CANDIDATE="${BASE_VERSION}-rc"

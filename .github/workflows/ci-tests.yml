@@ -33,5 +33,5 @@ jobs:
 
     - name: Verify the RC version round-trips through the POM and BuildConfig
       run: |
-        base="$(./gradlew -q printRendererVersion | tail -n1 | tr -d '[:space:]')"
-        ./gradlew :ChartboostPrebidPlugin:verifyPublishedVersion "-PRENDERER_VERSION=${base}-rc1"
+        base="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
+        ./gradlew :ChartboostPrebidPlugin:verifyPublishedVersion "-PADAPTER_VERSION=${base}-rc1"

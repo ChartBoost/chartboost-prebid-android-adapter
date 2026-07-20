@@ -56,14 +56,14 @@ jobs:
         elif [ -n "${HEAD_REF}" ]; then
           version="${HEAD_REF#release/}"
         else
-          version="$(./gradlew -q printRendererVersion | tail -n1 | tr -d '[:space:]')"
+          version="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
         fi
         # Canonical 3-segment X.Y.Z only. RCs are private and never tagged, so no -rc tail here.
         if ! printf '%s' "${version}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
           echo "::error::resolved version '${version}' is not a 3-segment X.Y.Z"; exit 1
         fi
         # Cross-check against the computed version so the tag can never drift from what the build produces.
-        base="$(./gradlew -q printRendererVersion | tail -n1 | tr -d '[:space:]')"
+        base="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
         if [ "${version}" != "${base}" ]; then
           echo "::error::version '${version}' does not match the computed version '${base}'"; exit 1
         fi

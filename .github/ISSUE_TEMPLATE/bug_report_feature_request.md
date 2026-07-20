@@ -17,7 +17,7 @@ _If you are filing a feature request, describe the feature you are looking for a
 _Describe the steps that reproduce the bug or lead to a feature deficiency. Include screenshots (if applicable) to help explain the issue._
 
     Example:
-    1. Register the renderer with '...'
+    1. Register the adapter with '...'
     2. Load a '....' ad unit
     3. Observe '....'
     4. See error
@@ -33,7 +33,7 @@ _Describe what the expected behavior should be or what the requested feature sho
 _Provide the following information._
  - Prebid Mobile SDK version: [e.g. 3.3.1]
  - Chartboost Monetization SDK version: [e.g. 9.12.0]
- - Adapter (renderer) version: [e.g. 309.12.0]
+ - Adapter version: [e.g. 309.12.0]
 
 **Android Environment Details**
 

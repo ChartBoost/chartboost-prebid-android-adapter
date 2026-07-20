@@ -6,7 +6,7 @@
 #
 # scripts/get_rc_version.sh queries the private repo for the highest existing <version>-rcN and returns
 # N+1 (rc1 when none), so RCs auto-increment. CHARTBOOST_PREBID_IS_RELEASE stays "false", so the gradle
-# publish targets the private repo. -PRENDERER_VERSION is this adapter's equivalent of the mediation
+# publish targets the private repo. -PADAPTER_VERSION is this adapter's equivalent of the mediation
 # adapters' VERSION_OVERRIDE.
 #
 # Required secrets (on the CI environment): JFROG_USER / JFROG_PASS with write access to
@@ -57,4 +57,4 @@ jobs:
         VERSION: ${{ steps.rc.outputs.version }}
       # `ci` runs the unit tests + assembleRelease + verifyPublishedVersion before artifactoryPublish (wired
       # in the module build), so an RC can never publish untested code.
-      run: ./gradlew ci :ChartboostPrebidPlugin:artifactoryPublish "-PRENDERER_VERSION=${VERSION}"
+      run: ./gradlew ci :ChartboostPrebidPlugin:artifactoryPublish "-PADAPTER_VERSION=${VERSION}"

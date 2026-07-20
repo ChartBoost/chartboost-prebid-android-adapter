@@ -13,7 +13,7 @@ enum class LogLevel { NONE, WARN, DEBUG }
 
 /**
  * Publisher-facing configuration for the Chartboost Prebid plugin. Pass to
- * [ChartboostPrebidRenderer.register] once before loading ads. Every field has a default: location
+ * [ChartboostPrebidAdapter.register] once before loading ads. Every field has a default: location
  * [PREBID_LOCATION], log level WARN, and no event listener. From Java, use [Builder] (Kotlin default
  * arguments are not visible to Java callers).
  */
