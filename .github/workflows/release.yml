@@ -4,8 +4,8 @@
 #
 # There is no reviewer gate (matching the mediation adapters), so public-publish safety rests on tag
 # discipline: v* tags are the only path that publishes to the public repo, and pushing one is restricted to
-# admins by a tag ruleset. The tag must equal the computed adapter version (v<printRendererVersion>), so the
-# published coordinate, the BuildConfig.RENDERER_VERSION the Prebid Server echoes back, and the git tag all
+# admins by a tag ruleset. The tag must equal the computed adapter version (v<printAdapterVersion>), so the
+# published coordinate, the BuildConfig.ADAPTER_VERSION the Prebid Server echoes back, and the git tag all
 # agree by construction.
 #
 # Required secrets (on the CI environment): JFROG_USER / JFROG_PASS with write access to chartboost-ads.
@@ -40,7 +40,7 @@ jobs:
       # byte. Reject a tag that does not equal the computed version, so a public release can never advertise
       # a version the server echo cannot reproduce. tail -n1 guards against stray Gradle daemon output.
       run: |
-        base="$(./gradlew -q printRendererVersion | tail -n1 | tr -d '[:space:]')"
+        base="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
         tag="${GITHUB_REF_NAME#v}"
         if [ "${tag}" != "${base}" ]; then
           echo "::error::tag '${GITHUB_REF_NAME}' does not match the computed version 'v${base}'. Bump the SDK pins / adapterRevision, or tag v${base}."
@@ -55,7 +55,7 @@ jobs:
         CHARTBOOST_PREBID_IS_RELEASE: 'true'
       # `ci` runs the unit tests + assembleRelease + verifyPublishedVersion before artifactoryPublish, so a
       # tagged public release can never publish untested code. The computed version equals the tag (asserted
-      # above), so no -PRENDERER_VERSION pin is needed.
+      # above), so no -PADAPTER_VERSION pin is needed.
       run: ./gradlew ci :ChartboostPrebidPlugin:artifactoryPublish
 
     - name: Create the GitHub Release

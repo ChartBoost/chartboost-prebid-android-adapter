@@ -8,7 +8,7 @@ Maintainer-only notes on how a release actually happens. Publisher-facing versio
 - **Release candidate (private):** push a `prerelease/**` branch, or run the `prerelease` workflow
   (`workflow_dispatch`). `scripts/get_rc_version.sh` computes the next `<version>-rcN` against the private
   repo, and the workflow publishes it there (`./gradlew ci :ChartboostPrebidPlugin:artifactoryPublish
-  -PRENDERER_VERSION=<rc>`, `CHARTBOOST_PREBID_IS_RELEASE=false`). The `ci` aggregate runs the unit tests,
+  -PADAPTER_VERSION=<rc>`, `CHARTBOOST_PREBID_IS_RELEASE=false`). The `ci` aggregate runs the unit tests,
   assembles the release AAR, and verifies coordinate/embedded version agreement in the same invocation, so
   an RC can never publish untested code. The public repo is never touched by this path.
 - **Public release:** push a `v<version>` tag directly, or run `create-release-version`

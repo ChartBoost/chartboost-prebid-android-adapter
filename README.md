@@ -1,7 +1,7 @@
 # Chartboost Prebid Android Adapter
 
-A Prebid Mobile plugin renderer that hands Chartboost-flagged winning bids to the Chartboost
-Monetization SDK for rendering, instead of Prebid's default renderer. Same Monetization SDK surface
+A Prebid Mobile plugin adapter that hands Chartboost-flagged winning bids to the Chartboost
+Monetization SDK for rendering, instead of letting Prebid render them. Same Monetization SDK surface
 that Chartboost Mediation and MAX drive, plugged into Prebid.
 
 ## Minimum Requirements
@@ -15,14 +15,14 @@ that Chartboost Mediation and MAX drive, plugged into Prebid.
 
 ## How it works
 
-Prebid Mobile routes a winning bid to a plugin renderer only when all of these hold:
+Prebid Mobile routes a winning bid to a registered plugin only when all of these hold:
 
 1. The bid carries `ext.prebid.targeting` with `hb_pb` + `hb_bidder` (so the SDK treats it as the winner).
 2. `ext.prebid.meta.rendererName` matches the plugin's `getName()` (`Chartboost-Android-SDK`).
 3. `ext.prebid.meta.rendererVersion` matches the plugin's `getVersion()`, byte for byte.
 
 On a match, the plugin builds a Chartboost `Banner` / `Interstitial` / `Rewarded`, hands it the bid's
-`adm` via `cache()`, and renders. A mismatch on any key falls back to Prebid's default renderer.
+`adm` via `cache()`, and renders. A mismatch on any key falls back to Prebid's own rendering.
 
 ## Integration
 
@@ -53,10 +53,10 @@ The adapter uses Kotlin coroutines at runtime and expects `kotlinx-coroutines-an
 classpath, which the Chartboost Monetization SDK already provides transitively; no extra dependency is
 needed unless your build excludes it.
 
-Then register the renderer once before initializing Prebid:
+Then register the adapter once before initializing Prebid:
 
 ```kotlin
-ChartboostPrebidRenderer.register()
+ChartboostPrebidAdapter.register()
 PrebidMobile.initializeSdk(context, "https://<your-pbs-host>/openrtb2/auction") { status ->
     Log.d("prebid", "init: $status")
 }
@@ -71,7 +71,7 @@ Chartboost-flagged bid routes to this plugin automatically.
 bare `register()` behavior, so you only need to set what you want to change:
 
 ```kotlin
-ChartboostPrebidRenderer.register(
+ChartboostPrebidAdapter.register(
     ChartboostPrebidConfig(
         location = "Home_Interstitial",
         logLevel = LogLevel.DEBUG,
@@ -114,13 +114,13 @@ Prebid's own ad lifecycle has no terminal show-failed signal, so a fullscreen ad
 at show time (e.g. it expired before `show()`) is logged but does not invoke `onAdFailed`; don't treat a
 missing display as a guaranteed failure callback.
 
-`ChartboostPrebidRenderer` also exposes two integration helpers:
+`ChartboostPrebidAdapter` also exposes two integration helpers:
 
-- `matchesServerRendererVersion(prebidServerRendererVersion)` — returns whether `rendererVersion` exactly,
+- `matchesServerAdapterVersion(prebidServerAdapterVersion)` — returns whether `adapterVersion` exactly,
   byte-for-byte, equals the value your Prebid Server adapter stamps as `ext.prebid.meta.rendererVersion`. A
-  mismatch makes Prebid Mobile silently fall back to its default renderer, so assert on this during
+  mismatch makes Prebid Mobile silently fall back to its own rendering, so assert on this during
   integration to fail fast instead of debugging a silent fallback.
-- `logIntegrationInfo()` — logs the registered renderer name and version at `WARN`-or-above verbosity, for
+- `logIntegrationInfo()` — logs the registered adapter name and version at `WARN`-or-above verbosity, for
   the same purpose.
 
 ## Consent and privacy
@@ -140,12 +140,12 @@ so its consent state applies to them as well.
 
 ## Versioning
 
-`BuildConfig.RENDERER_VERSION` is computed in the root `build.gradle.kts` from the scheme
+`BuildConfig.ADAPTER_VERSION` is computed in the root `build.gradle.kts` from the scheme
 `(prebid_sdk_major × 100 + monetization_major).(monetization_minor).(monetization_patch × 100 + adapter_revision)`,
 using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `309.12.0`). The Prebid
 Server adapter echoes this value back from the request, so the client-registered version and the
 server-stamped version match by construction — no shared constant or lock-step release. Override with
-`-PRENDERER_VERSION=X.Y.Z` to pin it.
+`-PADAPTER_VERSION=X.Y.Z` to pin it.
 
 The release process mirrors the Chartboost Mediation adapters:
 

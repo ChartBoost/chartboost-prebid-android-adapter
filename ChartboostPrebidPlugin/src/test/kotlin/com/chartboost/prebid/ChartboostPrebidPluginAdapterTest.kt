@@ -30,64 +30,64 @@ import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
-class ChartboostPrebidPluginRendererTest {
+class ChartboostPrebidPluginAdapterTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
-    private val renderer = ChartboostPrebidPluginRenderer(FakeChartboostAdFactory())
+    private val adapter = ChartboostPrebidPluginAdapter(FakeChartboostAdFactory())
 
-    private fun rendererWithToken(token: String?) =
-        ChartboostPrebidPluginRenderer(FakeChartboostAdFactory(), bidderToken = { token })
+    private fun adapterWithToken(token: String?) =
+        ChartboostPrebidPluginAdapter(FakeChartboostAdFactory(), bidderToken = { token })
 
     @Test
-    fun `reports the platform-specific renderer name`() {
-        assertEquals("Chartboost-Android-SDK", renderer.getName())
+    fun `reports the platform-specific adapter name`() {
+        assertEquals("Chartboost-Android-SDK", adapter.getName())
     }
 
     @Test
-    fun `reports the configured renderer version`() {
-        assertEquals(BuildConfig.RENDERER_VERSION, renderer.getVersion())
+    fun `reports the configured adapter version`() {
+        assertEquals(BuildConfig.ADAPTER_VERSION, adapter.getVersion())
     }
 
     @Test
     fun `data carries the fresh bidder token`() {
-        assertEquals("token-123", rendererWithToken("token-123").getData()?.getString("bidderToken"))
+        assertEquals("token-123", adapterWithToken("token-123").getData()?.getString("bidderToken"))
     }
 
     @Test
     fun `data omits the token and does not throw when it is unavailable`() {
-        assertFalse(rendererWithToken(null).getData()?.has("bidderToken") ?: true)
+        assertFalse(adapterWithToken(null).getData()?.has("bidderToken") ?: true)
     }
 
     @Test
     fun `supports banner rendering`() {
         val config = mockk<AdUnitConfiguration>(relaxed = true)
         every { config.isAdType(AdFormat.BANNER) } returns true
-        assertTrue(renderer.isSupportRenderingFor(config))
+        assertTrue(adapter.isSupportRenderingFor(config))
     }
 
     @Test
     fun `supports interstitial rendering`() {
         val config = mockk<AdUnitConfiguration>(relaxed = true)
         every { config.isAdType(AdFormat.INTERSTITIAL) } returns true
-        assertTrue(renderer.isSupportRenderingFor(config))
+        assertTrue(adapter.isSupportRenderingFor(config))
     }
 
     @Test
     fun `supports VAST rendering`() {
         val config = mockk<AdUnitConfiguration>(relaxed = true)
         every { config.isAdType(AdFormat.VAST) } returns true
-        assertTrue(renderer.isSupportRenderingFor(config))
+        assertTrue(adapter.isSupportRenderingFor(config))
     }
 
     @Test
     fun `does not support native rendering`() {
         val config = mockk<AdUnitConfiguration>(relaxed = true) // every isAdType defaults to false
-        assertFalse(renderer.isSupportRenderingFor(config))
+        assertFalse(adapter.isSupportRenderingFor(config))
     }
 
     @Test
     fun `createBannerAdView never returns null even when the markup is empty`() {
-        val view = renderer.createBannerAdView(
+        val view = adapter.createBannerAdView(
             context,
             mockk<DisplayViewListener>(relaxed = true),
             null,
@@ -99,8 +99,8 @@ class ChartboostPrebidPluginRendererTest {
 
     @Test
     fun `registering an event listener is a no-op and does not throw`() {
-        renderer.registerEventListener(mockk(relaxed = true), "key")
-        renderer.unregisterEventListener("key")
+        adapter.registerEventListener(mockk(relaxed = true), "key")
+        adapter.unregisterEventListener("key")
     }
 
     @After
@@ -110,20 +110,20 @@ class ChartboostPrebidPluginRendererTest {
 
     @Test
     fun `DEBUG config sets PluginLog level to DEBUG`() {
-        ChartboostPrebidPluginRenderer(ChartboostPrebidConfig(logLevel = LogLevel.DEBUG))
+        ChartboostPrebidPluginAdapter(ChartboostPrebidConfig(logLevel = LogLevel.DEBUG))
         assertEquals(LogLevel.DEBUG, PluginLog.level)
     }
 
     @Test
     fun `default config leaves PluginLog level at WARN`() {
-        ChartboostPrebidPluginRenderer(ChartboostPrebidConfig())
+        ChartboostPrebidPluginAdapter(ChartboostPrebidConfig())
         assertEquals(LogLevel.WARN, PluginLog.level)
     }
 
     @Test
     fun `banner adapter receives the configured location`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPrebidPluginRenderer(
+        val r = ChartboostPrebidPluginAdapter(
             factory,
             config = ChartboostPrebidConfig(location = "MyPlacement"),
         )
@@ -140,7 +140,7 @@ class ChartboostPrebidPluginRendererTest {
     @Test
     fun `banner adapter receives the default location when config uses the default`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPrebidPluginRenderer(factory)
+        val r = ChartboostPrebidPluginAdapter(factory)
         r.createBannerAdView(
             context,
             mockk<DisplayViewListener>(relaxed = true),
@@ -154,7 +154,7 @@ class ChartboostPrebidPluginRendererTest {
     @Test
     fun `banner adapter receives the default location when config location is blank`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPrebidPluginRenderer(
+        val r = ChartboostPrebidPluginAdapter(
             factory,
             config = ChartboostPrebidConfig(location = "  "),
         )
@@ -171,7 +171,7 @@ class ChartboostPrebidPluginRendererTest {
     @Test
     fun `fullscreen adapter receives the configured location`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPrebidPluginRenderer(
+        val r = ChartboostPrebidPluginAdapter(
             factory,
             config = ChartboostPrebidConfig(location = "FullscreenPlacement"),
         )
@@ -185,7 +185,7 @@ class ChartboostPrebidPluginRendererTest {
     @Test
     fun `fullscreen adapter receives the default location when config uses the default`() {
         val factory = FakeChartboostAdFactory()
-        val r = ChartboostPrebidPluginRenderer(factory)
+        val r = ChartboostPrebidPluginAdapter(factory)
         val adConfig = mockk<AdUnitConfiguration>(relaxed = true)
         every { adConfig.isRewarded } returns false
         r.createInterstitialController(context, mockk(relaxed = true), adConfig, fakeBidResponse())

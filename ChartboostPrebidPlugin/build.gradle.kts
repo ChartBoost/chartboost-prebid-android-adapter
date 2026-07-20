@@ -18,9 +18,9 @@ val chartboostSdkVersion: String = (project.findProperty("chartboostSdkVersion")
 val prebidMobileVersion: String = (project.findProperty("prebidMobileVersion") as String?) ?: "3.3.1"
 
 // Adapter version, computed and validated once in the root build. Stamped into
-// BuildConfig.RENDERER_VERSION and registered with Prebid Mobile; the Prebid Server adapter echoes it back
+// BuildConfig.ADAPTER_VERSION and registered with Prebid Mobile; the Prebid Server adapter echoes it back
 // from the request, so the two sides match by construction.
-val rendererVersion: String = rootProject.extra["rendererVersion"] as String
+val adapterVersion: String = rootProject.extra["adapterVersion"] as String
 
 // The published Maven artifact id. Reused by the publication and by verifyPublishedVersion, which anchors
 // its POM-version match on this exact coordinate.
@@ -32,7 +32,7 @@ android {
 
     defaultConfig {
         minSdk = 21
-        buildConfigField("String", "RENDERER_VERSION", "\"$rendererVersion\"")
+        buildConfigField("String", "ADAPTER_VERSION", "\"$adapterVersion\"")
         consumerProguardFiles("proguard-rules.pro")
     }
 
@@ -88,9 +88,9 @@ dependencies {
 }
 
 // ---- Publishing ------------------------------------------------------------------------------------
-// Publishes the release AAR as com.chartboost:chartboost-prebid-adapter:<rendererVersion> so consuming
-// builds can resolve it. The version reuses the computed renderer version, so the artifact and
-// BuildConfig.RENDERER_VERSION never drift. Deps are compileOnly (the host app ships both SDKs), so the
+// Publishes the release AAR as com.chartboost:chartboost-prebid-adapter:<adapterVersion> so consuming
+// builds can resolve it. The version reuses the computed adapter version, so the artifact and
+// BuildConfig.ADAPTER_VERSION never drift. Deps are compileOnly (the host app ships both SDKs), so the
 // generated POM carries no transitive dependencies, by design.
 //
 // Destination follows the same release/non-release split the SDKs use. A publish targets the public
@@ -132,11 +132,11 @@ afterEvaluate {
                 artifact(layout.buildDirectory.file("outputs/aar/${project.name}-release.aar"))
                 groupId = "com.chartboost"
                 artifactId = publishedArtifactId
-                version = rendererVersion
+                version = adapterVersion
 
                 pom {
                     name.set("Chartboost Prebid Adapter")
-                    description.set("Chartboost renderer plugin for Prebid Mobile on Android.")
+                    description.set("Chartboost adapter for Prebid Mobile on Android.")
                     url.set("https://www.chartboost.com/")
                     licenses {
                         license {
@@ -162,7 +162,7 @@ afterEvaluate {
         }
     }
 
-    // Guards against the Maven coordinate version and the compiled BuildConfig.RENDERER_VERSION drifting
+    // Guards against the Maven coordinate version and the compiled BuildConfig.ADAPTER_VERSION drifting
     // apart. They share one source today, but a publish advertising one version while the binary registers
     // another would route to nobody, so assert it on the generated artifacts before any publish.
     val verifyPublishedVersion = tasks.register("verifyPublishedVersion") {
@@ -178,11 +178,11 @@ afterEvaluate {
             val pomVersion = Regex("<artifactId>$publishedArtifactId</artifactId>\\s*<version>(.+?)</version>")
                 .find(pomFile.get().asFile.readText())?.groupValues?.get(1)
                 ?: error("could not read the published version from ${pomFile.get().asFile.path}")
-            val embedded = Regex("""RENDERER_VERSION = "(.+?)"""").find(buildConfigFile.get().asFile.readText())
+            val embedded = Regex("""ADAPTER_VERSION = "(.+?)"""").find(buildConfigFile.get().asFile.readText())
                 ?.groupValues?.get(1)
-                ?: error("could not read RENDERER_VERSION from ${buildConfigFile.get().asFile.path}")
+                ?: error("could not read ADAPTER_VERSION from ${buildConfigFile.get().asFile.path}")
             require(pomVersion == embedded) {
-                "version drift: Maven coordinate is '$pomVersion' but BuildConfig.RENDERER_VERSION is '$embedded'"
+                "version drift: Maven coordinate is '$pomVersion' but BuildConfig.ADAPTER_VERSION is '$embedded'"
             }
             logger.lifecycle("verifyPublishedVersion: coordinate and embedded version agree ($pomVersion)")
         }
@@ -193,9 +193,9 @@ afterEvaluate {
     // fat-fingered invocation could otherwise point an RC version at the public "chartboost-ads" repo.
     val verifyPublicReleaseVersion = tasks.register("verifyPublicReleaseVersion") {
         doLast {
-            val isRcVersion = rendererVersion.contains("-rc")
+            val isRcVersion = adapterVersion.contains("-rc")
             require(!(artifactoryRepoKey == publicRepoKey && isRcVersion)) {
-                "Refusing to publish RC version '$rendererVersion' to the public repo '$publicRepoKey'. " +
+                "Refusing to publish RC version '$adapterVersion' to the public repo '$publicRepoKey'. " +
                     "RCs are private-only; drop the -PprebidArtifactoryRepoKey override or publish a " +
                     "non-RC version."
             }
@@ -215,7 +215,7 @@ afterEvaluate {
             // Derive the label from the resolved repo key (not the flag) so it stays honest even when the
             // -PprebidArtifactoryRepoKey override picks the destination.
             val visibility = if (artifactoryRepoKey == publicRepoKey) "PUBLIC" else "private"
-            logger.lifecycle("Publishing chartboost-prebid-adapter:$rendererVersion to $visibility repo '$artifactoryRepoKey'")
+            logger.lifecycle("Publishing chartboost-prebid-adapter:$adapterVersion to $visibility repo '$artifactoryRepoKey'")
         }
     }
 
