@@ -46,6 +46,9 @@ jobs:
         token: ${{ secrets.RELEASE_PAT }}
         fetch-depth: 0
 
+    - name: Validate the Gradle wrapper
+      uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
     - name: Set up JDK
       uses: ./.github/actions/setup-jdk
 

@@ -32,6 +32,9 @@ jobs:
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
+    - name: Validate the Gradle wrapper
+      uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
     - name: Set up JDK
       uses: ./.github/actions/setup-jdk
 
