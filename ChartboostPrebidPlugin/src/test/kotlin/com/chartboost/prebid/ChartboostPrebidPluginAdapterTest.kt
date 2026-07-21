@@ -12,10 +12,8 @@ import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
 import com.chartboost.prebid.internal.PREBID_LOCATION
-import com.chartboost.prebid.internal.PluginLog
 import io.mockk.every
 import io.mockk.mockk
-import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -101,23 +99,6 @@ class ChartboostPrebidPluginAdapterTest {
     fun `registering an event listener is a no-op and does not throw`() {
         adapter.registerEventListener(mockk(relaxed = true), "key")
         adapter.unregisterEventListener("key")
-    }
-
-    @After
-    fun resetLogLevel() {
-        PluginLog.level = LogLevel.WARN
-    }
-
-    @Test
-    fun `DEBUG config sets PluginLog level to DEBUG`() {
-        ChartboostPrebidPluginAdapter(ChartboostPrebidConfig(logLevel = LogLevel.DEBUG))
-        assertEquals(LogLevel.DEBUG, PluginLog.level)
-    }
-
-    @Test
-    fun `default config leaves PluginLog level at WARN`() {
-        ChartboostPrebidPluginAdapter(ChartboostPrebidConfig())
-        assertEquals(LogLevel.WARN, PluginLog.level)
     }
 
     @Test

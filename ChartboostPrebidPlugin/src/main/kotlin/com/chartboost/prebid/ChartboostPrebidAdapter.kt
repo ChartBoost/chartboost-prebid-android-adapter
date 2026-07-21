@@ -35,6 +35,7 @@ object ChartboostPrebidAdapter {
         adapterVersion == prebidServerAdapterVersion
 
     fun register(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) {
+        PluginLog.level = config.logLevel
         PrebidMobilePluginRegister.getInstance().registerPlugin(ChartboostPrebidPluginAdapter(config))
     }
 

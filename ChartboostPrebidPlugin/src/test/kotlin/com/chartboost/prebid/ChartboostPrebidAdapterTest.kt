@@ -98,4 +98,37 @@ class ChartboostPrebidAdapterTest {
 
         assertFalse(registry.containsPlugin(ChartboostPrebidPluginAdapter.NAME))
     }
+
+    @Test
+    fun `register with a DEBUG config sets PluginLog level to DEBUG`() {
+        mockkStatic(PrebidMobilePluginRegister::class)
+        val registry = mockk<PrebidMobilePluginRegister>(relaxed = true)
+        every { PrebidMobilePluginRegister.getInstance() } returns registry
+
+        ChartboostPrebidAdapter.register(ChartboostPrebidConfig(logLevel = LogLevel.DEBUG))
+
+        assertEquals(LogLevel.DEBUG, PluginLog.level)
+    }
+
+    @Test
+    fun `register with the default config leaves PluginLog level at WARN`() {
+        mockkStatic(PrebidMobilePluginRegister::class)
+        val registry = mockk<PrebidMobilePluginRegister>(relaxed = true)
+        every { PrebidMobilePluginRegister.getInstance() } returns registry
+
+        ChartboostPrebidAdapter.register()
+
+        assertEquals(LogLevel.WARN, PluginLog.level)
+    }
+
+    @Test
+    fun `unregister does not reset the log level that register configured`() {
+        // Regression: unregister() used to construct a throwaway ChartboostPrebidPluginAdapter whose init
+        // block reset PluginLog.level to the default WARN config, clobbering whatever register() configured.
+        ChartboostPrebidAdapter.register(ChartboostPrebidConfig(logLevel = LogLevel.NONE))
+
+        ChartboostPrebidAdapter.unregister()
+
+        assertEquals(LogLevel.NONE, PluginLog.level)
+    }
 }

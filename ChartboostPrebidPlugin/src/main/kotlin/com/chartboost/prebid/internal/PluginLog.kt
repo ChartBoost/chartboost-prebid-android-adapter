@@ -18,7 +18,7 @@ internal object PluginLog {
     private const val TAG = "ChartboostPrebid"
     private val warned: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-    /** Current verbosity. Set once per process via [ChartboostPrebidPluginAdapter] init. Thread-safe. */
+    /** Current verbosity. Set once per process via [com.chartboost.prebid.ChartboostPrebidAdapter.register]. Thread-safe. */
     @Volatile var level: LogLevel = LogLevel.WARN
 
     fun d(message: String) {

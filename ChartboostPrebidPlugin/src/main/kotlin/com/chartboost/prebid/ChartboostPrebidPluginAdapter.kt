@@ -41,10 +41,6 @@ internal class ChartboostPrebidPluginAdapter(
 
     constructor(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) : this(DefaultChartboostAdFactory(), config = config)
 
-    init {
-        PluginLog.level = config.logLevel
-    }
-
     override fun getName(): String = NAME
 
     override fun getVersion(): String = ADAPTER_VERSION
