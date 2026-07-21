@@ -25,6 +25,9 @@ import org.prebid.mobile.api.rendering.pluginrenderer.PrebidMobilePluginRegister
 import org.prebid.mobile.api.rendering.pluginrenderer.PrebidMobilePluginRenderer
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
+
+private const val LOG_TAG = "ChartboostPrebid"
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -130,5 +133,13 @@ class ChartboostPrebidAdapterTest {
         ChartboostPrebidAdapter.unregister()
 
         assertEquals(LogLevel.NONE, PluginLog.level)
+    }
+
+    @Test
+    fun `logIntegrationInfo emits an INFO line naming the adapter and its version`() {
+        ChartboostPrebidAdapter.logIntegrationInfo()
+
+        val logged = ShadowLog.getLogsForTag(LOG_TAG)
+        assertTrue(logged.any { it.msg.contains(ChartboostPrebidAdapter.adapterName) && it.msg.contains(ChartboostPrebidAdapter.adapterVersion) })
     }
 }
