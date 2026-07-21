@@ -150,6 +150,20 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
+    fun `show with no loaded ad does not throw and does not show anything`() {
+        adapter().show()
+        verify(exactly = 0) { factory.interstitial.show() }
+    }
+
+    @Test
+    fun `show after destroy does not throw and does not show anything`() {
+        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+        adapter.destroy()
+        adapter.show()
+        verify(exactly = 0) { factory.interstitial.show() }
+    }
+
+    @Test
     fun `destroy tears the underlying ad down`() {
         val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
         adapter.destroy()
