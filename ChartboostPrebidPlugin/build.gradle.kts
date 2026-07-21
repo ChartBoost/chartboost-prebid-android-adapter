@@ -156,7 +156,7 @@ afterEvaluate {
                         url.set(gitUrl)
                         // scm:git:<url> is the canonical Maven SCM connection format; the bare browse URL
                         // (used for scm.url above) is not a valid connection/developerConnection value.
-                        val scmGitUrl = "scm:git:https://github.com/ChartBoost/chartboost-prebid-android-adapter.git"
+                        val scmGitUrl = "scm:git:${gitUrl.trimEnd('/')}.git"
                         connection.set(scmGitUrl)
                         developerConnection.set(scmGitUrl)
                     }
