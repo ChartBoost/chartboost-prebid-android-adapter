@@ -16,8 +16,6 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
 
-private const val TAG = "ChartboostPrebid"
-
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class PluginLogTest {
@@ -34,7 +32,7 @@ class PluginLogTest {
         PluginLog.i("plugin-log-test-none-i")
         PluginLog.w("plugin-log-test-none-w")
         PluginLog.warnOnce("plugin-log-test-none-warnonce")
-        assertTrue(ShadowLog.getLogsForTag(TAG).isEmpty())
+        assertTrue(ShadowLog.getLogsForTag(PluginLog.TAG).isEmpty())
     }
 
     @Test
@@ -43,7 +41,7 @@ class PluginLogTest {
         val message = "plugin-log-test-warnonce-dedupe"
         PluginLog.warnOnce(message)
         PluginLog.warnOnce(message)
-        assertEquals(1, ShadowLog.getLogsForTag(TAG).count { it.msg == message })
+        assertEquals(1, ShadowLog.getLogsForTag(PluginLog.TAG).count { it.msg == message })
     }
 
     @Test
@@ -51,6 +49,6 @@ class PluginLogTest {
         PluginLog.level = LogLevel.WARN
         val message = "plugin-log-test-i-at-warn-level"
         PluginLog.i(message)
-        assertEquals(1, ShadowLog.getLogsForTag(TAG).count { it.msg == message })
+        assertEquals(1, ShadowLog.getLogsForTag(PluginLog.TAG).count { it.msg == message })
     }
 }

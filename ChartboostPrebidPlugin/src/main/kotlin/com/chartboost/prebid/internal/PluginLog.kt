@@ -15,10 +15,10 @@ import java.util.concurrent.ConcurrentHashMap
  * line per process, used for the token-absent path.
  */
 internal object PluginLog {
-    private const val TAG = "ChartboostPrebid"
+    internal const val TAG = "ChartboostPrebid"
     private val warned: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-    /** Current verbosity. Set once per process via [com.chartboost.prebid.ChartboostPrebidAdapter.register]. Thread-safe. */
+    /** Current verbosity. Set by [com.chartboost.prebid.ChartboostPrebidAdapter.register]; each call overwrites it. Thread-safe. */
     @Volatile var level: LogLevel = LogLevel.WARN
 
     fun d(message: String) {
