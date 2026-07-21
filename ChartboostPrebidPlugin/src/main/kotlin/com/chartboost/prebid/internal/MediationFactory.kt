@@ -23,10 +23,11 @@ internal object MediationFactory {
     fun create(): Mediation =
         Mediation(MEDIATION_NAME, hostPrebidVersion, BuildConfig.ADAPTER_VERSION)
 
-    // PrebidMobile.SDK_VERSION is a compile-time `const val`, so referencing it directly inlines the literal
-    // from the compileOnly dependency this adapter was built against, not whatever Prebid version the host
-    // app actually ships. Reading the field via reflection resolves it against the host's classpath at
-    // runtime instead; the compile-time constant is only a fallback for when that reflection fails.
+    // PrebidMobile.SDK_VERSION is a Java `static final String` with a compile-time ConstantValue, so
+    // referencing it directly inlines the literal from the compileOnly dependency this adapter was built
+    // against, not whatever Prebid version the host app actually ships. Reading the field via reflection
+    // resolves it against the host's classpath at runtime instead; the compile-time constant is only a
+    // fallback for when that reflection fails.
     private val hostPrebidVersion: String? by lazy {
         runCatching { PrebidMobile::class.java.getField("SDK_VERSION").get(null) as? String }
             .getOrNull() ?: PrebidMobile.SDK_VERSION

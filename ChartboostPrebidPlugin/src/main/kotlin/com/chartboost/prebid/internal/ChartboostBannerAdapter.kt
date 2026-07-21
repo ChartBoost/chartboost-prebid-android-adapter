@@ -31,6 +31,11 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  *
  * The banner path has no separate loadAd, so caching is kicked off at construction. We report "loaded" on
  * cache success (not on show, which re-fires under refresh) and "displayed" on impression.
+ *
+ * Teardown is driven entirely by window detachment. A view that is created but never attached (the
+ * publisher discards it before layout) never reaches onDetachedFromWindow, so Banner.detach() never fires
+ * and the underlying ad is only reclaimed at GC; Prebid's plugin contract has no lifecycle-end hook for a
+ * created-but-never-displayed view.
  */
 @SuppressLint("ViewConstructor")
 internal class ChartboostBannerAdapter(
@@ -166,13 +171,8 @@ internal class ChartboostBannerAdapter(
         //
         // Known limitation: if a re-attach happens after the delay has already fired, the banner has
         // already been torn down. Prebid's plugin contract provides no lifecycle-end signal, so any
-        // timer-based teardown shares this edge case; it is inherent to the deferred approach.
-        //
-        // A second, separate known limitation: this teardown path only runs at all if the view was attached
-        // to a window at some point. A view created but never attached (e.g. the publisher discards it
-        // before layout) never calls onDetachedFromWindow, so Banner.detach() never fires; the plugin
-        // contract has no lifecycle-end hook for a created-but-never-displayed view, so those are only
-        // reclaimed by GC.
+        // timer-based teardown shares this edge case; it is inherent to the deferred approach. (The
+        // never-attached case is documented on the class KDoc: this callback never runs for those views.)
         teardownAction?.let { cancelTeardown(it) }
         val action = Runnable {
             if (!isAttachedToWindow && destroyed.fire()) {
