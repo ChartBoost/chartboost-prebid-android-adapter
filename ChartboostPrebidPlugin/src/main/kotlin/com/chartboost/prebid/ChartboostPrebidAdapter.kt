@@ -16,13 +16,13 @@ import org.prebid.mobile.api.rendering.pluginrenderer.PrebidMobilePluginRegister
  * happens before the first ad load. The Chartboost Monetization SDK is started separately by the
  * publisher. Re-registering the same name replaces the previous registration (Prebid behavior).
  */
-object ChartboostPrebidAdapter {
+public object ChartboostPrebidAdapter {
 
     /** The adapter name sent in every bid request. Must match the Prebid Server adapter's `rendererName`. */
-    val adapterName: String get() = ChartboostPrebidPluginAdapter.NAME
+    public val adapterName: String get() = ChartboostPrebidPluginAdapter.NAME
 
     /** The adapter version sent in every bid request. Must byte-match the Prebid Server adapter's `rendererVersion`. */
-    val adapterVersion: String get() = ChartboostPrebidPluginAdapter.ADAPTER_VERSION
+    public val adapterVersion: String get() = ChartboostPrebidPluginAdapter.ADAPTER_VERSION
 
     /**
      * Returns whether [adapterVersion] exactly equals [prebidServerAdapterVersion] — the value the
@@ -31,10 +31,10 @@ object ChartboostPrebidAdapter {
      * on this during integration to fail fast instead of debugging a silent fallback. The comparison is
      * byte-for-byte, matching Prebid's own check.
      */
-    fun matchesServerAdapterVersion(prebidServerAdapterVersion: String): Boolean =
+    public fun matchesServerAdapterVersion(prebidServerAdapterVersion: String): Boolean =
         adapterVersion == prebidServerAdapterVersion
 
-    fun register(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) {
+    public fun register(config: ChartboostPrebidConfig = ChartboostPrebidConfig()) {
         PluginLog.level = config.logLevel
         PrebidMobilePluginRegister.getInstance().registerPlugin(ChartboostPrebidPluginAdapter(config))
     }
@@ -47,7 +47,7 @@ object ChartboostPrebidAdapter {
      * The adapter's constructors are internal, so a consumer cannot build one to pass to Prebid directly;
      * this is the only supported way to unregister.
      */
-    fun unregister() {
+    public fun unregister() {
         PrebidMobilePluginRegister.getInstance().unregisterPlugin(ChartboostPrebidPluginAdapter())
     }
 
@@ -56,7 +56,7 @@ object ChartboostPrebidAdapter {
      * the client-side values match the Prebid Server adapter stamp; a mismatch causes silent fallback
      * to Prebid's own rendering.
      */
-    fun logIntegrationInfo() {
+    public fun logIntegrationInfo() {
         PluginLog.i("ChartboostPrebidAdapter: name=$adapterName version=$adapterVersion — version must byte-match the Prebid Server rendererVersion or routing falls back to Prebid's own rendering")
     }
 }
