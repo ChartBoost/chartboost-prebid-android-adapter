@@ -1,5 +1,4 @@
 # This repo's gitleaks configuration, picked up automatically by the secrets-scan workflow.
-# Rule extensions and allowlist exclusions live below.
 
 # Use all built-in gitleaks default rules
 [extend]
