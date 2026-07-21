@@ -142,7 +142,7 @@ so its consent state applies to them as well.
 | Path                     | What it is |
 | ------------------------ | ---------- |
 | `ChartboostPrebidPlugin/` | The adapter library (the shipped artifact). |
-| `scripts/`                | Release-automation helper scripts (e.g. `get_rc_version.sh`, see [Versioning](#versioning)). |
+| `scripts/`                | Release-automation helpers (`get_rc_version.sh`, see [Versioning](#versioning)). |
 
 ## Building from source
 
