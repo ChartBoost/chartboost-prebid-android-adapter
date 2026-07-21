@@ -20,12 +20,9 @@ class MediationFactoryTest {
 
     @Test
     fun `uses the host Prebid SDK version as the library version`() {
-        // Pins the behavioral contract: libraryVersion equals the classpath's SDK_VERSION. In this test
-        // JVM the compile-time and runtime Prebid artifacts are the same, so the reflected value equals the
-        // inlined constant and a silent fallback inside MediationFactory is not detectable here; the
-        // reflection below only keeps the expected value symmetric with how the adapter reads it.
-        val expected = requireNotNull(PrebidMobile::class.java.getField("SDK_VERSION").get(null) as? String)
-        assertEquals(expected, MediationFactory.create().libraryVersion)
+        // In this single-classpath JVM the runtime value equals the compile-time constant, so the
+        // reflection-failure path (null) is untestable here; this pins the happy-path contract.
+        assertEquals(PrebidMobile.SDK_VERSION, MediationFactory.create().libraryVersion)
     }
 
     @Test
