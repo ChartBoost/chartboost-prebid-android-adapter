@@ -36,7 +36,7 @@ jobs:
       cancel-in-progress: false
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
         # Check out with the PAT so the tag push below is attributed to it and triggers release.yml.
         token: ${{ secrets.RELEASE_PAT }}
