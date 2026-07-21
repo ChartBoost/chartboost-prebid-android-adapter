@@ -14,12 +14,13 @@ Maintainer-only notes on how a release actually happens. Publisher-facing versio
 - **Public release:** push a `v<version>` tag directly, or run `create-release-version`
   (`workflow_dispatch`, with optional SDK-pin inputs) to open a `release/<version>` PR that bumps
   `gradle.properties` and prepends a `CHANGELOG.md` entry. Merging that PR triggers `auto-release`, which
-  pushes the `v<version>` tag. The tag push triggers `release`, which verifies the tag equals the
-  Gradle-computed version, runs the same `ci` test-and-verify gate before publishing the bare `<version>`
-  to the public repo (`CHARTBOOST_PREBID_IS_RELEASE=true`), and cuts a GitHub Release with the AAR attached.
+  waits for a required reviewer to approve the `release-approval` environment before it pushes the
+  `v<version>` tag. The tag push triggers `release`, which verifies the tag equals the Gradle-computed
+  version, runs the same `ci` test-and-verify gate before publishing the bare `<version>` to the public repo
+  (`CHARTBOOST_PREBID_IS_RELEASE=true`), and cuts a GitHub Release with the AAR attached.
 
-There is no PR-approval-style reviewer gate on the tag-push path itself (mirrors the Chartboost Mediation
-adapters), but two automated guards back up tag discipline:
+The tag push itself (`release.yml`) has no separate reviewer gate (mirrors the Chartboost Mediation
+adapters), but the `auto-release` approval step above and two automated guards back up tag discipline:
 
 - The `verifyPublicReleaseVersion` Gradle task (a hard dependency of `artifactoryPublish`) fails any publish
   of an `-rc` version to the public repo, so a fat-fingered invocation cannot land an RC there.
@@ -31,6 +32,7 @@ Still: don't push a `v*` tag, and don't merge a `release/**` PR, before you mean
 
 - `JFROG_USER` / `JFROG_PASS` on a `CI` GitHub environment, with write access to `private-chartboost-ads`
   (RCs, used by `prerelease`) and `chartboost-ads` (public, used by `release`).
+- A `release-approval` GitHub environment with a required reviewer, gating `auto-release`'s tag push.
 - A repo/org `RELEASE_PAT` secret (`contents: write`) that `auto-release` uses to push the release tag and
   `create-release-version` uses to open the release-prep PR. Both need a PAT rather than the default
   `GITHUB_TOKEN`, because a tag or PR created by `GITHUB_TOKEN` does not trigger the downstream workflow.
