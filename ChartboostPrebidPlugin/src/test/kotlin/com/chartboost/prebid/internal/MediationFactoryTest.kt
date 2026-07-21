@@ -20,7 +20,12 @@ class MediationFactoryTest {
 
     @Test
     fun `uses the host Prebid SDK version as the library version`() {
-        assertEquals(PrebidMobile.SDK_VERSION, MediationFactory.create().libraryVersion)
+        // Read the expected value through the same reflection MediationFactory uses, rather than the
+        // compile-time constant directly: both this test and the adapter compile against the same Prebid
+        // dependency, so comparing against the inlined constant would pass even if the adapter fell back to
+        // reading a stale compile-time literal instead of the host's actual classpath value.
+        val expected = requireNotNull(PrebidMobile::class.java.getField("SDK_VERSION").get(null) as? String)
+        assertEquals(expected, MediationFactory.create().libraryVersion)
     }
 
     @Test
