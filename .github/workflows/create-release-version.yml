@@ -25,9 +25,10 @@ on:
         required: false
         type: string
 
+# The only write this workflow performs (opening the release-prep PR) goes through secrets.RELEASE_PAT
+# explicitly, not the default GITHUB_TOKEN, so the default token only needs read access to check out.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   create-release-version:
