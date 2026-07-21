@@ -171,8 +171,7 @@ internal class ChartboostBannerAdapter(
         //
         // Known limitation: if a re-attach happens after the delay has already fired, the banner has
         // already been torn down. Prebid's plugin contract provides no lifecycle-end signal, so any
-        // timer-based teardown shares this edge case; it is inherent to the deferred approach. (The
-        // never-attached case is documented on the class KDoc: this callback never runs for those views.)
+        // timer-based teardown shares this edge case; it is inherent to the deferred approach.
         teardownAction?.let { cancelTeardown(it) }
         val action = Runnable {
             if (!isAttachedToWindow && destroyed.fire()) {
