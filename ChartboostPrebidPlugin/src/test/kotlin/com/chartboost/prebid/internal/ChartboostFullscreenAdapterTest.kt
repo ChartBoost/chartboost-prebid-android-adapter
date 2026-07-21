@@ -29,9 +29,17 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.prebid.mobile.configuration.AdUnitConfiguration
 import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerListener
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
+private const val LOG_TAG = "ChartboostPrebid"
+
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33])
 class ChartboostFullscreenAdapterTest {
 
     private val context = mockk<Context>(relaxed = true)
@@ -150,17 +158,19 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
-    fun `show with no loaded ad does not throw and does not show anything`() {
+    fun `show with no loaded ad warns and shows nothing`() {
         adapter().show()
         verify(exactly = 0) { factory.interstitial.show() }
+        assertTrue(ShadowLog.getLogsForTag(LOG_TAG).any { it.msg.contains("show() called with no loaded ad") })
     }
 
     @Test
-    fun `show after destroy does not throw and does not show anything`() {
+    fun `show after destroy warns and shows nothing`() {
         val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
         adapter.destroy()
         adapter.show()
         verify(exactly = 0) { factory.interstitial.show() }
+        assertTrue(ShadowLog.getLogsForTag(LOG_TAG).any { it.msg.contains("show() called with no loaded ad") })
     }
 
     @Test
