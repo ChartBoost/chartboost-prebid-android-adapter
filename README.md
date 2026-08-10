@@ -133,7 +133,7 @@ nothing else:
 | `STANDARD` | 320x50 | all supported versions |
 | `MEDIUM` | 300x250 | all supported versions |
 | `LEADERBOARD` | 728x90 | all supported versions |
-| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0 |
+| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0 (not yet released) |
 
 Given a winning bid's negotiated width and height, this adapter selects the **largest of those sizes that
 fits entirely inside** the requested dimensions. A full-width slot of, say, 412x50 renders `STANDARD`
@@ -150,8 +150,9 @@ in the auction as well, so a newly added size needs its list updated too before 
 
 If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size. The
 Chartboost Prebid Server adapter filters each impression's `imp.Banner.format` down to the sizes it can
-render and rejects an impression that offers none of them, so most size mismatches surface as a rejected
-impression upstream rather than a no-fill on the device.
+render and rejects a banner-only impression that offers none of them, so most size mismatches surface
+upstream rather than as a no-fill on the device. An impression that also carries video keeps its video slot
+and loses only the banner.
 
 ## Consent and privacy
 
