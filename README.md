@@ -144,12 +144,14 @@ to its own rendering path. A 320x49 slot is a no-fill, because even the shortest
 50dp of height. The adapter never renders a size larger than the slot it was given: doing so would still
 count a billable impression while overflowing the publisher's layout.
 
-The size set is read from the host SDK at runtime, so upgrading the Monetization SDK is enough to make a
-newly added size selectable. No adapter release is required.
+The size set is read from the host SDK at runtime, so a size added in a later Monetization SDK release
+becomes selectable without an adapter release. The Chartboost Prebid Server adapter has to offer that size
+in the auction as well, so a newly added size needs its list updated too before it can win a bid.
 
-If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size. Offering
-the Chartboost bidder only sizes from the table above, by constraining `imp.Banner.format` in your Prebid
-Server configuration, avoids the situation upstream.
+If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size. The
+Chartboost Prebid Server adapter filters each impression's `imp.Banner.format` down to the sizes it can
+render and rejects an impression that offers none of them, so most size mismatches surface as a rejected
+impression upstream rather than a no-fill on the device.
 
 ## Consent and privacy
 
