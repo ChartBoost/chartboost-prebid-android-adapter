@@ -57,12 +57,19 @@ class BannerSizeMapperTest {
     }
 
     @Test
-    fun `resolves a half page slot to the largest size the pinned SDK can fit`() {
+    fun `resolves a half page slot to HALFPAGE`() {
         // Asserted concretely rather than recomputed, so this test cannot agree with a bug in the mapper.
-        // Against the pinned 9.12.0 a 300x600 slot admits only MEDIUM 300x250. When chartboostSdkVersion
-        // moves to 9.14.0 this becomes HALFPAGE 300x600 and the expectation below must be updated with it,
-        // which is the point: the flip should be a conscious edit, not silent.
-        assertEquals(Banner.BannerSize.MEDIUM, BannerSizeMapper.map(300, 600))
+        // 300x600 admits MEDIUM 300x250 (75k) and HALFPAGE 300x600 (180k), and the larger area wins.
+        assertEquals(Banner.BannerSize.HALFPAGE, BannerSizeMapper.map(300, 600))
+    }
+
+    @Test
+    fun `adding HALFPAGE leaves the three original sizes resolving to themselves`() {
+        // Spelled out rather than driven off entries, so a regression cannot hide behind the identity test
+        // above: that one would still pass if HALFPAGE displaced one of these at its own dimensions.
+        assertEquals(Banner.BannerSize.STANDARD, BannerSizeMapper.map(320, 50))
+        assertEquals(Banner.BannerSize.MEDIUM, BannerSizeMapper.map(300, 250))
+        assertEquals(Banner.BannerSize.LEADERBOARD, BannerSizeMapper.map(728, 90))
     }
 
     @Test

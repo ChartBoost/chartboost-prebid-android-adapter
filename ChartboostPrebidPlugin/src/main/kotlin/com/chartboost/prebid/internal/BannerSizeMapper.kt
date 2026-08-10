@@ -21,7 +21,8 @@ import com.chartboost.sdk.ads.Banner
  * larger than the slot the publisher actually had, and counted a billable impression while doing it.
  *
  * The candidate set is read from [Banner.BannerSize.entries] at runtime, so a size the host's SDK adds in
- * a later release (HALFPAGE 300x600, Monetization 9.14.0) starts being selected with no adapter change.
+ * a later release starts being selected with no adapter change. HALFPAGE 300x600 arrived that way in
+ * Monetization 9.14.0; a host still on an older SDK resolves a 300x600 slot to MEDIUM instead.
  *
  * This function is pure. The rejection is logged once by [ChartboostErrorMapper.unsupportedBannerSize] at
  * the call site, so it does not log here.
