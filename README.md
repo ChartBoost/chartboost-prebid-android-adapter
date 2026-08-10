@@ -114,8 +114,10 @@ Prebid's own ad lifecycle has no terminal show-failed signal, so a fullscreen ad
 at show time (e.g. it expired before `show()`) is logged but does not invoke `onAdFailed`; don't treat a
 missing display as a guaranteed failure callback.
 
-`ChartboostPrebidAdapter` also exposes two integration helpers:
+`ChartboostPrebidAdapter` also exposes three integration helpers:
 
+- `unregister()` — the counterpart to `register()`; a no-op when nothing is registered. Call it to tear
+  down a registration whose `eventListener` captures an Activity, so the listener does not outlive it.
 - `matchesServerAdapterVersion(prebidServerAdapterVersion)` — returns whether `adapterVersion` exactly,
   byte-for-byte, equals the value your Prebid Server adapter stamps as `ext.prebid.meta.rendererVersion`. A
   mismatch makes Prebid Mobile silently fall back to its own rendering, so assert on this during
@@ -137,6 +139,12 @@ so its consent state applies to them as well.
 | Path                     | What it is |
 | ------------------------ | ---------- |
 | `ChartboostPrebidPlugin/` | The adapter library (the shipped artifact). |
+| `scripts/`                | Release-automation helpers (`get_rc_version.sh`, see [Versioning](#versioning)). |
+
+## Building from source
+
+Requires JDK 17. `./gradlew ci` runs the same verification gate CI runs; [RELEASING.md](RELEASING.md)
+describes what it covers.
 
 ## Versioning
 

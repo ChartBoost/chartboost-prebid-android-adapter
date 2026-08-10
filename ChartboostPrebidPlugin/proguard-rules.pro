@@ -1,3 +1,9 @@
+#
+# Copyright (c) 2026 Chartboost, Inc.
+#
+# Licensed under the MIT License.
+#
+
 # Consumer ProGuard rules for the Chartboost Prebid plugin adapter.
 #
 # Prebid Mobile discovers and drives the adapter through the public
