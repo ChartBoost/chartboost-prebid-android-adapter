@@ -44,8 +44,8 @@ Then in your app's `build.gradle`, add the adapter plus the SDKs it renders thro
 `compileOnly` against both SDKs, so your app must depend on them directly:
 
 ```groovy
-implementation "com.chartboost:chartboost-prebid-adapter:309.12.0"
-implementation "com.chartboost:chartboost-sdk:9.12.0"
+implementation "com.chartboost:chartboost-prebid-adapter:309.14.0"
+implementation "com.chartboost:chartboost-sdk:9.14.0"
 implementation "org.prebid:prebid-mobile-sdk:3.3.1"
 ```
 
@@ -135,7 +135,7 @@ nothing else:
 | `STANDARD` | 320x50 | all supported versions |
 | `MEDIUM` | 300x250 | all supported versions |
 | `LEADERBOARD` | 728x90 | all supported versions |
-| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0 (not yet released) |
+| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0+ |
 
 Given a winning bid's negotiated width and height, this adapter selects the **largest of those sizes that
 fits entirely inside** the requested dimensions. A full-width slot of, say, 412x50 renders `STANDARD`
@@ -181,7 +181,7 @@ describes what it covers.
 
 `BuildConfig.ADAPTER_VERSION` is computed in the root `build.gradle.kts` from the scheme
 `(prebid_sdk_major × 100 + monetization_major).(monetization_minor).(monetization_patch × 100 + adapter_revision)`,
-using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `309.12.0`). The Prebid
+using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `309.14.0`). The Prebid
 Server adapter echoes this value back from the request, so the client-registered version and the
 server-stamped version match by construction — no shared constant or lock-step release. Override with
 `-PADAPTER_VERSION=X.Y.Z` to pin it.
