@@ -42,6 +42,12 @@ class ChartboostErrorMapperTest {
     }
 
     @Test
+    fun `reports an unsupported banner size with the requested dimensions`() {
+        val message = ChartboostErrorMapper.unsupportedBannerSize(250, 250).message ?: ""
+        assertTrue(message, message.contains("250x250"))
+    }
+
+    @Test
     fun `maps an expired ad to a descriptive message`() {
         // ExpirationReason lives in the SDK's internal package and cannot be named here; a relaxed mock
         // supplies the reason the message interpolates.

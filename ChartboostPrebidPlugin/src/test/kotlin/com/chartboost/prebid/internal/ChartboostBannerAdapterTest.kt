@@ -193,6 +193,26 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
+    fun `reports failure when no Chartboost size fits the negotiated slot`() {
+        // 250x250 is narrower than every Chartboost size. This used to snap to the nearest and render larger
+        // than the slot while still counting a billable impression; it must fail the load instead.
+        adapter(bid = fakeBid(adm = "<adm>", width = 250, height = 250))
+        verify { listener.onAdFailed(any()) }
+    }
+
+    @Test
+    fun `creates no banner when no Chartboost size fits the negotiated slot`() {
+        adapter(bid = fakeBid(adm = "<adm>", width = 250, height = 250))
+        assertEquals(null, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `fills a full-width slot with the largest size that fits`() {
+        adapter(bid = fakeBid(adm = "<adm>", width = 412, height = 50))
+        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
     fun `banner creation attaches the Prebid mediation object`() {
         adapter(bid = fakeBid(adm = "<adm>"))
         val expected = MediationFactory.create()

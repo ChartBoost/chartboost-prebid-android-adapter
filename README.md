@@ -125,6 +125,37 @@ missing display as a guaranteed failure callback.
 - `logIntegrationInfo()` — logs the registered adapter name and version at `WARN`-or-above verbosity, for
   the same purpose.
 
+## Banner sizes
+
+The Chartboost Monetization SDK renders a banner at one of its own `Banner.BannerSize` dimensions and
+nothing else:
+
+| Size | Dimensions | Available from |
+| --- | --- | --- |
+| `STANDARD` | 320x50 | all supported versions |
+| `MEDIUM` | 300x250 | all supported versions |
+| `LEADERBOARD` | 728x90 | all supported versions |
+| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0 (not yet released) |
+
+Given a winning bid's negotiated width and height, this adapter selects the **largest of those sizes that
+fits entirely inside** the requested dimensions. A full-width slot of, say, 412x50 renders `STANDARD`
+320x50 within it, the same way a fixed size is fitted into an adaptive banner slot.
+
+If nothing fits, the bid is declined through `DisplayViewListener.onAdFailed` and Prebid Mobile falls back
+to its own rendering path. A 320x49 slot is a no-fill, because even the shortest Chartboost banner needs
+50dp of height. The adapter never renders a size larger than the slot it was given: doing so would still
+count a billable impression while overflowing the publisher's layout.
+
+The size set is read from the host SDK at runtime, so a size added in a later Monetization SDK release
+becomes selectable without an adapter release. The Chartboost Prebid Server adapter has to offer that size
+in the auction as well, so a newly added size needs its list updated too before it can win a bid.
+
+If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size. The
+Chartboost Prebid Server adapter filters each impression's `imp.Banner.format` down to the sizes it can
+render and rejects a banner-only impression that offers none of them, so most size mismatches surface
+upstream rather than as a no-fill on the device. An impression that also carries video keeps its video slot
+and loses only the banner.
+
 ## Consent and privacy
 
 This adapter does not collect, store, or forward any consent signals. GDPR, US Privacy (CCPA), COPPA, and

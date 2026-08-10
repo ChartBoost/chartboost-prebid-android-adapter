@@ -60,18 +60,30 @@ internal class ChartboostBannerAdapter(
             mainThread.execute { reportFailed(ChartboostErrorMapper.admInvalid()) }
         } else {
             val size = BannerSizeMapper.map(winningBid.width, winningBid.height)
-            // Constructing a Chartboost Banner throws if the Monetization SDK was never started. Never let
-            // that escape createBannerAdView; report it through the loading delegate instead.
-            try {
-                val created = factory.createBanner(context, location, size, this, MediationFactory.create())
-                banner = created
-                addView(created)
-                // No separate loadAd on the banner path, so caching starts here. cache() is async internally
-                // (launches on the SDK's main scope), so it does not re-enter the loading delegate synchronously.
-                created.cache(adm)
-            } catch (e: Exception) {
-                mainThread.execute { reportFailed(ChartboostErrorMapper.adCreationFailed(e)) }
+            if (size == null) {
+                // No Chartboost size fits inside the negotiated slot, so there is nothing to render there.
+                // Rendering something larger than the slot would still count a billable impression.
+                mainThread.execute {
+                    reportFailed(ChartboostErrorMapper.unsupportedBannerSize(winningBid.width, winningBid.height))
+                }
+            } else {
+                createAndCache(size, adm)
             }
+        }
+    }
+
+    private fun createAndCache(size: Banner.BannerSize, adm: String) {
+        // Constructing a Chartboost Banner throws if the Monetization SDK was never started. Never let
+        // that escape createBannerAdView; report it through the loading delegate instead.
+        try {
+            val created = factory.createBanner(context, location, size, this, MediationFactory.create())
+            banner = created
+            addView(created)
+            // No separate loadAd on the banner path, so caching starts here. cache() is async internally
+            // (launches on the SDK's main scope), so it does not re-enter the loading delegate synchronously.
+            created.cache(adm)
+        } catch (e: Exception) {
+            mainThread.execute { reportFailed(ChartboostErrorMapper.adCreationFailed(e)) }
         }
     }
 

@@ -45,6 +45,17 @@ internal object ChartboostErrorMapper {
 
     fun admInvalid(): AdException = adException("Empty or invalid ADM for a Chartboost-flagged bid")
 
+    /**
+     * No Banner.BannerSize fits inside the negotiated slot, so there is nothing the SDK could render there.
+     * Declining is deliberate: rendering a size larger than the slot would still count a billable
+     * impression.
+     */
+    fun unsupportedBannerSize(width: Int, height: Int): AdException =
+        adException(
+            "No Chartboost banner size fits the negotiated ${width}x$height slot " +
+                "(available: ${BannerSizeMapper.supportedSizes()})",
+        )
+
     /** A cached ad expired or was evicted before it could be shown; the publisher should reload. */
     fun adExpired(event: ExpirationEvent): AdException =
         adException("Chartboost ad expired before display [reason ${event.reason}]")
