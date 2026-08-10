@@ -5,6 +5,9 @@
 # The tag MUST be pushed with a PAT (secrets.RELEASE_PAT), not the default GITHUB_TOKEN, because a tag
 # pushed by GITHUB_TOKEN does not trigger another workflow (GitHub suppresses recursive triggers), so
 # release.yml would never fire. The PAT needs `contents: write` on this repo.
+#
+# The job targets the release-approval environment, which has a required reviewer configured in repo
+# settings, so tagging waits for that approval before it runs.
 name: auto-release
 
 on:
@@ -31,12 +34,13 @@ jobs:
        startsWith(github.event.pull_request.head.ref, 'release/') &&
        github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
+    environment: release-approval
     concurrency:
       group: auto-release
       cancel-in-progress: false
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       with:
         # Check out with the PAT so the tag push below is attributed to it and triggers release.yml.
         token: ${{ secrets.RELEASE_PAT }}

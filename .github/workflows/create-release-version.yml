@@ -25,15 +25,16 @@ on:
         required: false
         type: string
 
+# The only write this workflow performs (opening the release-prep PR) goes through secrets.RELEASE_PAT
+# explicitly, not the default GITHUB_TOKEN, so the default token only needs read access to check out.
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   create-release-version:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
     - name: Set up JDK
       uses: ./.github/actions/setup-jdk

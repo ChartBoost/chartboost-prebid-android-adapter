@@ -1,11 +1,16 @@
 name: 'Set up JDK'
-description: 'Sets up JDK 17 (Temurin) with Gradle caching and grants execute permission for gradlew'
+description: 'Validates the Gradle wrapper, sets up JDK 17 (Temurin) with Gradle caching, and grants execute permission for gradlew'
 
 runs:
   using: 'composite'
   steps:
+    # Lives here so every workflow that prepares to run ./gradlew gets the wrapper-jar
+    # integrity check for free, and the action pin is maintained in one place.
+    - name: Validate the Gradle wrapper
+      uses: gradle/actions/wrapper-validation@3f131e8634966bd73d06cc69884922b02e6faf92 # v6.2.0
+
     - name: Set up JDK
-      uses: actions/setup-java@v4
+      uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4.8.0
       with:
         java-version: '17'
         distribution: 'temurin'
