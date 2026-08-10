@@ -123,6 +123,34 @@ missing display as a guaranteed failure callback.
 - `logIntegrationInfo()` — logs the registered adapter name and version at `WARN`-or-above verbosity, for
   the same purpose.
 
+## Banner sizes
+
+The Chartboost Monetization SDK renders a banner at one of its own `Banner.BannerSize` dimensions and
+nothing else:
+
+| Size | Dimensions | Available from |
+| --- | --- | --- |
+| `STANDARD` | 320x50 | all supported versions |
+| `MEDIUM` | 300x250 | all supported versions |
+| `LEADERBOARD` | 728x90 | all supported versions |
+| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0 |
+
+Given a winning bid's negotiated width and height, this adapter selects the **largest of those sizes that
+fits entirely inside** the requested dimensions. A full-width slot of, say, 412x50 renders `STANDARD`
+320x50 within it, the same way a fixed size is fitted into an adaptive banner slot.
+
+If nothing fits, the bid is declined through `DisplayViewListener.onAdFailed` and Prebid Mobile falls back
+to its own rendering path. A 320x49 slot is a no-fill, because even the shortest Chartboost banner needs
+50dp of height. The adapter never renders a size larger than the slot it was given: doing so would still
+count a billable impression while overflowing the publisher's layout.
+
+The size set is read from the host SDK at runtime, so upgrading the Monetization SDK is enough to make a
+newly added size selectable. No adapter release is required.
+
+If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size. Offering
+the Chartboost bidder only sizes from the table above, by constraining `imp.Banner.format` in your Prebid
+Server configuration, avoids the situation upstream.
+
 ## Consent and privacy
 
 This adapter does not collect, store, or forward any consent signals. GDPR, US Privacy (CCPA), COPPA, and
