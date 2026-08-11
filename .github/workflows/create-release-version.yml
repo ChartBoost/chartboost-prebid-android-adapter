@@ -5,8 +5,9 @@
 # CHANGELOG entry, and opens a PR on a release/<version> branch. Merging that PR triggers
 # auto-release.yml -> tag -> release.yml.
 #
-# README minimum-requirement bumps (if any) are left to the PR author, since they are "N+" minimums, not
-# exact per-release values.
+# Two things are left to the PR author: README minimum-requirement bumps, since those are "N+" minimums
+# rather than exact per-release values, and CHANGELOG bullets for behaviour changes, since the generated
+# entry records certification only. The PR body prompts for both.
 name: create-release-version
 
 on:
@@ -78,13 +79,17 @@ jobs:
       run: |
         CB="$(grep -E '^chartboostSdkVersion=' gradle.properties | cut -d= -f2)"
         PB="$(grep -E '^prebidMobileVersion=' gradle.properties | cut -d= -f2)"
-        awk -v v="$VERSION" -v cb="$CB" -v pb="$PB" '
+        # Wording and the heading-then-bullet shape (no blank line between the two) copy the entries already
+        # in CHANGELOG.md, which in turn copy every Chartboost Mediation adapter changelog. The SDK order is
+        # this repo's own, since no other adapter certifies against two SDKs at once. The sentence is built
+        # here rather than inside awk so the awk block stays purely structural.
+        CERTIFIED_BULLET="- This version of the adapter has been certified with Prebid Mobile SDK ${PB} and Chartboost Monetization SDK ${CB}."
+        awk -v v="$VERSION" -v bullet="$CERTIFIED_BULLET" '
           { print }
           /<!-- releases -->/ && !done {
             print "";
             print "### " v;
-            print "";
-            print "- Certified with Chartboost Monetization SDK " cb " and Prebid Mobile SDK " pb ".";
+            print bullet;
             done = 1
           }
         ' CHANGELOG.md > CHANGELOG.md.new
@@ -105,5 +110,8 @@ jobs:
         body: |
           Release prep for ${{ steps.ver.outputs.version }}.
 
+          Before merging, add a CHANGELOG bullet for every behaviour change in this release; the generated
+          entry records certification only. Update the README minimum requirements too if they changed.
+
           Merging this PR pushes the `v${{ steps.ver.outputs.version }}` tag (auto-release.yml) and publishes
-          the public release (release.yml). Update the README minimum requirements too if they changed.
+          the public release (release.yml).
