@@ -4,10 +4,11 @@
 version: 2
 updates:
   # Gradle: plugin versions declared in the root build, plus the library module's (test) dependencies.
+  # One entry only. The root scan already traverses subprojects, so listing the module as a second
+  # directory produced a duplicate PR for every module dependency (#4 and #9 were the same coroutines
+  # bump, #8 and #10 the same robolectric bump).
   - package-ecosystem: "gradle"
-    directories:
-      - "/"
-      - "/ChartboostPrebidPlugin"
+    directory: "/"
     schedule:
       interval: "weekly"
 
