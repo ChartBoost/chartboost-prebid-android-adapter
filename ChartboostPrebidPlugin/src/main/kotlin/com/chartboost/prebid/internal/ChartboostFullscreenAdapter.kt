@@ -92,7 +92,13 @@ internal class ChartboostFullscreenAdapter(
     }
 
     override fun show() {
-        ad?.show()
+        val ad = this.ad
+        if (ad == null) {
+            // Warn instead of the silent-drop used elsewhere: a publisher calling show() expects an ad.
+            PluginLog.w("fullscreen show() called with no loaded ad (destroyed, expired, or never loaded); ignoring")
+            return
+        }
+        ad.show()
     }
 
     override fun destroy() {

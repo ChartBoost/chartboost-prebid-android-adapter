@@ -20,6 +20,8 @@ class MediationFactoryTest {
 
     @Test
     fun `uses the host Prebid SDK version as the library version`() {
+        // In this single-classpath JVM the runtime value equals the compile-time constant, so the
+        // reflection-failure path (null) is untestable here; this pins the happy-path contract.
         assertEquals(PrebidMobile.SDK_VERSION, MediationFactory.create().libraryVersion)
     }
 
