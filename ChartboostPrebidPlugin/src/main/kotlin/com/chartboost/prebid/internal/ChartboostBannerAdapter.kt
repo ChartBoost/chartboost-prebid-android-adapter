@@ -31,6 +31,11 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  *
  * The banner path has no separate loadAd, so caching is kicked off at construction. We report "loaded" on
  * cache success (not on show, which re-fires under refresh) and "displayed" on impression.
+ *
+ * Teardown is driven entirely by window detachment. A view that is created but never attached (the
+ * publisher discards it before layout) never reaches onDetachedFromWindow, so Banner.detach() never fires
+ * and the underlying ad is only reclaimed at GC; Prebid's plugin contract has no lifecycle-end hook for a
+ * created-but-never-displayed view.
  */
 @SuppressLint("ViewConstructor")
 internal class ChartboostBannerAdapter(

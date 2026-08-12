@@ -7,6 +7,7 @@
 package com.chartboost.prebid.internal
 
 import android.content.Context
+import android.util.Log
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
@@ -24,7 +25,10 @@ import com.chartboost.sdk.events.ShowError
 import com.chartboost.sdk.events.ShowEvent
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.unmockkStatic
 import io.mockk.verify
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -33,6 +37,11 @@ import org.prebid.mobile.configuration.AdUnitConfiguration
 import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerListener
 
 class ChartboostFullscreenAdapterTest {
+
+    @After
+    fun unmockLog() {
+        unmockkStatic(Log::class)
+    }
 
     private val context = mockk<Context>(relaxed = true)
     private val listener = mockk<InterstitialControllerListener>(relaxed = true)
@@ -147,6 +156,30 @@ class ChartboostFullscreenAdapterTest {
         val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
         adapter.show()
         verify { factory.interstitial.show() }
+    }
+
+    @Test
+    fun `show with no loaded ad warns and shows nothing`() {
+        mockkStatic(Log::class)
+        every { Log.w(PluginLog.TAG, any<String>()) } returns 0
+
+        adapter().show()
+
+        verify(exactly = 0) { factory.interstitial.show() }
+        verify { Log.w(PluginLog.TAG, match<String> { "show() called with no loaded ad" in it }) }
+    }
+
+    @Test
+    fun `show after destroy warns and shows nothing`() {
+        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+        adapter.destroy()
+        mockkStatic(Log::class)
+        every { Log.w(PluginLog.TAG, any<String>()) } returns 0
+
+        adapter.show()
+
+        verify(exactly = 0) { factory.interstitial.show() }
+        verify { Log.w(PluginLog.TAG, match<String> { "show() called with no loaded ad" in it }) }
     }
 
     @Test

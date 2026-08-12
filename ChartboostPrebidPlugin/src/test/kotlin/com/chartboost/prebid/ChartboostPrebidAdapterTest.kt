@@ -25,6 +25,7 @@ import org.prebid.mobile.api.rendering.pluginrenderer.PrebidMobilePluginRegister
 import org.prebid.mobile.api.rendering.pluginrenderer.PrebidMobilePluginRenderer
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -38,6 +39,14 @@ class ChartboostPrebidAdapterTest {
     @After
     fun resetLogLevel() {
         PluginLog.level = LogLevel.WARN
+    }
+
+    /** Replaces Prebid's process-global registry with a relaxed mock; undone by [unmockRegister]. */
+    private fun mockRegistry(): PrebidMobilePluginRegister {
+        mockkStatic(PrebidMobilePluginRegister::class)
+        val registry = mockk<PrebidMobilePluginRegister>(relaxed = true)
+        every { PrebidMobilePluginRegister.getInstance() } returns registry
+        return registry
     }
 
     @Test
@@ -62,9 +71,7 @@ class ChartboostPrebidAdapterTest {
 
     @Test
     fun `register registers the adapter with Prebid Mobile`() {
-        mockkStatic(PrebidMobilePluginRegister::class)
-        val registry = mockk<PrebidMobilePluginRegister>(relaxed = true)
-        every { PrebidMobilePluginRegister.getInstance() } returns registry
+        val registry = mockRegistry()
 
         ChartboostPrebidAdapter.register()
 
@@ -73,9 +80,7 @@ class ChartboostPrebidAdapterTest {
 
     @Test
     fun `register plumbs the supplied config's location into the registered adapter`() {
-        mockkStatic(PrebidMobilePluginRegister::class)
-        val registry = mockk<PrebidMobilePluginRegister>(relaxed = true)
-        every { PrebidMobilePluginRegister.getInstance() } returns registry
+        val registry = mockRegistry()
         val registered = slot<PrebidMobilePluginRenderer>()
         every { registry.registerPlugin(capture(registered)) } just Runs
 
@@ -97,5 +102,42 @@ class ChartboostPrebidAdapterTest {
         ChartboostPrebidAdapter.unregister()
 
         assertFalse(registry.containsPlugin(ChartboostPrebidPluginAdapter.NAME))
+    }
+
+    @Test
+    fun `register with a DEBUG config sets PluginLog level to DEBUG`() {
+        mockRegistry()
+
+        ChartboostPrebidAdapter.register(ChartboostPrebidConfig(logLevel = LogLevel.DEBUG))
+
+        assertEquals(LogLevel.DEBUG, PluginLog.level)
+    }
+
+    @Test
+    fun `register with the default config leaves PluginLog level at WARN`() {
+        mockRegistry()
+
+        ChartboostPrebidAdapter.register()
+
+        assertEquals(LogLevel.WARN, PluginLog.level)
+    }
+
+    @Test
+    fun `unregister does not reset the log level that register configured`() {
+        // Regression: unregister() used to construct a throwaway ChartboostPrebidPluginAdapter whose init
+        // block reset PluginLog.level to the default WARN config, clobbering whatever register() configured.
+        ChartboostPrebidAdapter.register(ChartboostPrebidConfig(logLevel = LogLevel.NONE))
+
+        ChartboostPrebidAdapter.unregister()
+
+        assertEquals(LogLevel.NONE, PluginLog.level)
+    }
+
+    @Test
+    fun `logIntegrationInfo emits an INFO line naming the adapter and its version`() {
+        ChartboostPrebidAdapter.logIntegrationInfo()
+
+        val logged = ShadowLog.getLogsForTag(PluginLog.TAG)
+        assertTrue(logged.any { it.msg.contains(ChartboostPrebidAdapter.adapterName) && it.msg.contains(ChartboostPrebidAdapter.adapterVersion) })
     }
 }

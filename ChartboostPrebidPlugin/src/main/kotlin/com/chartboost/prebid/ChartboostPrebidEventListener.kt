@@ -20,21 +20,21 @@ import org.prebid.mobile.api.exceptions.AdException
  * ad that loads but then fails at show time (e.g. it expired before `show()`) is logged but does not invoke
  * [onAdFailed], so do not treat a missing display as a guaranteed failure callback.
  */
-interface ChartboostPrebidEventListener {
-    fun onAdLoaded(format: ChartboostAdFormat) {}
+public interface ChartboostPrebidEventListener {
+    public fun onAdLoaded(format: ChartboostAdFormat) {}
 
     /**
      * The ad became visible. Fired on the Chartboost show event for [ChartboostAdFormat.INTERSTITIAL] and
      * [ChartboostAdFormat.REWARDED], and on the first recorded impression for [ChartboostAdFormat.BANNER]
      * (the banner path has no separate show signal). Account for that difference in display-timing metrics.
      */
-    fun onAdDisplayed(format: ChartboostAdFormat) {}
+    public fun onAdDisplayed(format: ChartboostAdFormat) {}
 
-    fun onAdClicked(format: ChartboostAdFormat) {}
+    public fun onAdClicked(format: ChartboostAdFormat) {}
 
-    fun onAdFailed(format: ChartboostAdFormat, error: AdException) {}
+    public fun onAdFailed(format: ChartboostAdFormat, error: AdException) {}
 
-    fun onAdDismissed(format: ChartboostAdFormat) {}
+    public fun onAdDismissed(format: ChartboostAdFormat) {}
 
-    fun onUserEarnedReward(format: ChartboostAdFormat) {}
+    public fun onUserEarnedReward(format: ChartboostAdFormat) {}
 }

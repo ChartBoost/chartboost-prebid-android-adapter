@@ -18,12 +18,15 @@ import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.cacheError
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
+import com.chartboost.prebid.fakes.showError
 import com.chartboost.sdk.ads.Banner
 import com.chartboost.sdk.events.CacheError
 import com.chartboost.sdk.events.CacheEvent
 import com.chartboost.sdk.events.ClickEvent
 import com.chartboost.sdk.events.ExpirationEvent
 import com.chartboost.sdk.events.ImpressionEvent
+import com.chartboost.sdk.events.ShowError
+import com.chartboost.sdk.events.ShowEvent
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -322,6 +325,18 @@ class ChartboostBannerAdapterTest {
         // masked by reportFailed's !loadedLatch.hasFired guard.
         val adapter = adapter()
         adapter.onAdExpired(mockk<ExpirationEvent>(relaxed = true))
+        verify(exactly = 0) { listener.onAdFailed(any()) }
+    }
+
+    @Test
+    fun `show failure after load logs only and never re-signals onAdFailed`() {
+        // Mirrors the fullscreen adapter's equivalent case: Prebid has no terminal show-failed signal, so a
+        // ShowError arriving after onAdLoaded already reported success must be logged only, never re-signaled
+        // as onAdFailed.
+        val adapter = adapter()
+        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
+        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.NO_CACHED_AD))
+        verify(exactly = 1) { listener.onAdLoaded() }
         verify(exactly = 0) { listener.onAdFailed(any()) }
     }
 
