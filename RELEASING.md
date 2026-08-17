@@ -17,7 +17,8 @@ Maintainer-only notes on how a release actually happens. Publisher-facing versio
   waits for a required reviewer to approve the `release-approval` environment before it pushes the
   `v<version>` tag. The tag push triggers `release`, which verifies the tag equals the Gradle-computed
   version, runs the same `ci` test-and-verify gate before publishing the bare `<version>` to the public repo
-  (`CHARTBOOST_PREBID_IS_RELEASE=true`), and cuts a GitHub Release with the AAR attached.
+  (`CHARTBOOST_PREBID_IS_RELEASE=true`), and cuts a GitHub Release with the AAR attached and that
+  version's `CHANGELOG.md` section as the body.
 
 The tag push itself (`release.yml`) has no separate reviewer gate (mirrors the Chartboost Mediation
 adapters), but the `auto-release` approval step above and two automated guards back up tag discipline:
