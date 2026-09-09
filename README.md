@@ -9,7 +9,7 @@ that Chartboost Mediation and MAX drive, plugged into Prebid.
 | Component                | Version |
 | ------------------------ | ------- |
 | Prebid Mobile SDK        | 3.3.1+  |
-| Chartboost Monetization SDK | 9.12.0+ |
+| Chartboost Monetization SDK | 9.14.0+ |
 | Android API              | 21+     |
 | kotlinx-coroutines-android | present at runtime (ships transitively with the Chartboost Monetization SDK) |
 
@@ -44,8 +44,8 @@ Then in your app's `build.gradle`, add the adapter plus the SDKs it renders thro
 `compileOnly` against both SDKs, so your app must depend on them directly:
 
 ```groovy
-implementation "com.chartboost:chartboost-prebid-adapter:309.12.0"
-implementation "com.chartboost:chartboost-sdk:9.12.0"
+implementation "com.chartboost:chartboost-prebid-adapter:309.14.0"
+implementation "com.chartboost:chartboost-sdk:9.14.0"
 implementation "org.prebid:prebid-mobile-sdk:3.3.1"
 ```
 
@@ -135,16 +135,36 @@ nothing else:
 | `STANDARD` | 320x50 | all supported versions |
 | `MEDIUM` | 300x250 | all supported versions |
 | `LEADERBOARD` | 728x90 | all supported versions |
-| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0 (not yet released) |
+| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0+ |
 
 Given a winning bid's negotiated width and height, this adapter selects the **largest of those sizes that
 fits entirely inside** the requested dimensions. A full-width slot of, say, 412x50 renders `STANDARD`
 320x50 within it, the same way a fixed size is fitted into an adaptive banner slot.
 
-If nothing fits, the bid is declined through `DisplayViewListener.onAdFailed` and Prebid Mobile falls back
-to its own rendering path. A 320x49 slot is a no-fill, because even the shortest Chartboost banner needs
-50dp of height. The adapter never renders a size larger than the slot it was given: doing so would still
-count a billable impression while overflowing the publisher's layout.
+**Bid with no declared size.** Prebid reads a missing width/height as 0x0, and Chartboost's own demand
+omits width/height on banner bids today. Rather than treat that as an automatic no-fill, the adapter falls
+back to the size configured on the ad unit itself — either `BannerParameters.adSizes` or the older
+deprecated size setters, matching the precedence Prebid Mobile uses when it builds the request. The
+fallback also applies when only one dimension is missing (e.g. 320x0), since that is just as unusable as
+0x0. If the ad unit offers more than one size, the response does not say which one the bid actually won,
+so the adapter picks the smallest by area and logs a warning naming the candidates, since the smallest is
+the only choice that cannot overflow a slot the publisher sized for something smaller. Sizes the
+Monetization SDK cannot render into are passed over first, so an ad unit offering both 320x50 and 50x320
+resolves to 320x50 rather than declining the bid. A bid that already carries a usable width and height is
+unaffected; the ad unit's configured size is never consulted for it.
+
+This substitution decides which `Banner.BannerSize` gets rendered. It does not rewrite the bid, so
+anything Prebid Mobile derives from the bid's own width and height, such as the `hb_size` targeting key,
+still reflects what the bidder sent. Reporting a real width and height on the bid remains a server-side
+concern.
+
+If nothing fits, the bid is declined through `DisplayViewListener.onAdFailed`. That is final, not a
+retry: Prebid Mobile's `DisplayView.createBannerAdView` picks a plugin once, via
+`getPluginForPreferredRenderer`, and once our plugin has that bid, a decline chains straight to
+`BannerViewListener.onAdFailed` on the publisher's listener. There is no second rendering attempt and no
+fallback to Prebid's own renderer. A 320x49 slot is a no-fill, because even the shortest Chartboost banner
+needs 50dp of height. The adapter never renders a size larger than the slot it was given: doing so would
+still count a billable impression while overflowing the publisher's layout.
 
 The size set is read from the host SDK at runtime, so a size added in a later Monetization SDK release
 becomes selectable without an adapter release. The Chartboost Prebid Server adapter has to offer that size
@@ -181,7 +201,7 @@ describes what it covers.
 
 `BuildConfig.ADAPTER_VERSION` is computed in the root `build.gradle.kts` from the scheme
 `(prebid_sdk_major × 100 + monetization_major).(monetization_minor).(monetization_patch × 100 + adapter_revision)`,
-using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `309.12.0`). The Prebid
+using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `309.14.0`). The Prebid
 Server adapter echoes this value back from the request, so the client-registered version and the
 server-stamped version match by construction — no shared constant or lock-step release. Override with
 `-PADAPTER_VERSION=X.Y.Z` to pin it.

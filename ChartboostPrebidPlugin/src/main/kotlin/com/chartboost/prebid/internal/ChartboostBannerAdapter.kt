@@ -21,7 +21,9 @@ import com.chartboost.sdk.events.ExpirationEvent
 import com.chartboost.sdk.events.ImpressionEvent
 import com.chartboost.sdk.events.ShowError
 import com.chartboost.sdk.events.ShowEvent
+import org.prebid.mobile.AdSize
 import org.prebid.mobile.api.exceptions.AdException
+import org.prebid.mobile.rendering.bidding.data.bid.Bid
 import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 
@@ -36,6 +38,10 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  * publisher discards it before layout) never reaches onDetachedFromWindow, so Banner.detach() never fires
  * and the underlying ad is only reclaimed at GC; Prebid's plugin contract has no lifecycle-end hook for a
  * created-but-never-displayed view.
+ *
+ * A bid that names no usable size (see [hasUsableBannerSize]) falls back to [adUnitFallbackSize], the ad
+ * unit's own configured slot, resolved by the caller via [AdUnitBannerSizeResolver]. A bid with a usable
+ * size never consults it.
  */
 @SuppressLint("ViewConstructor")
 internal class ChartboostBannerAdapter(
@@ -47,6 +53,7 @@ internal class ChartboostBannerAdapter(
     private val location: String = PREBID_LOCATION,
     private val teardownScheduler: TeardownScheduler? = null,
     private var eventListener: ChartboostPrebidEventListener? = null,
+    private val adUnitFallbackSize: AdSize? = null,
 ) : FrameLayout(context), BannerCallback {
 
     private val loadedLatch = SingleFireLatch()
@@ -64,17 +71,42 @@ internal class ChartboostBannerAdapter(
             // Never return null/throw from createBannerAdView; fail through the loading delegate.
             mainThread.execute { reportFailed(ChartboostErrorMapper.admInvalid()) }
         } else {
-            val size = BannerSizeMapper.map(winningBid.width, winningBid.height)
+            val (width, height) = bannerDimensions(winningBid)
+            val size = BannerSizeMapper.map(width, height)
             if (size == null) {
                 // No Chartboost size fits inside the negotiated slot, so there is nothing to render there.
                 // Rendering something larger than the slot would still count a billable impression.
                 mainThread.execute {
-                    reportFailed(ChartboostErrorMapper.unsupportedBannerSize(winningBid.width, winningBid.height))
+                    reportFailed(ChartboostErrorMapper.unsupportedBannerSize(width, height))
                 }
             } else {
                 createAndCache(size, adm)
             }
         }
+    }
+
+    /**
+     * The bid's own width/height when usable, otherwise [adUnitFallbackSize] when one was resolved.
+     *
+     * Chartboost's own demand omits w/h on banner bids today; without this fallback every such bid would
+     * be a hard no-fill, since Prebid picks a plugin once and does not retry through its own renderer on a
+     * decline.
+     *
+     * Re-checks [hasUsableBannerSize] rather than trusting the caller to only pass a fallback when it is
+     * needed. The caller (the plugin adapter) already skips resolving one for a usable bid, but this
+     * class still must never let a populated [adUnitFallbackSize] override a bid that can stand on its
+     * own — deliberate defense-in-depth, verified independently of the caller's own check.
+     */
+    private fun bannerDimensions(bid: Bid): Pair<Int, Int> {
+        val fallback = adUnitFallbackSize
+        if (bid.hasUsableBannerSize || fallback == null) return bid.width to bid.height
+        // Without this line a no-fill further down reports the substituted dimensions with no hint of
+        // where they came from, which reads as the ad unit being at fault when the bid named no size.
+        PluginLog.d(
+            "banner bid names no usable size (${bid.width}x${bid.height}); " +
+                "falling back to the ad unit's ${fallback.width}x${fallback.height}",
+        )
+        return fallback.width to fallback.height
     }
 
     private fun createAndCache(size: Banner.BannerSize, adm: String) {

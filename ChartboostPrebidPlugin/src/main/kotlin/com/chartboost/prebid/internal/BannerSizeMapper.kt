@@ -9,6 +9,13 @@ package com.chartboost.prebid.internal
 import com.chartboost.sdk.ads.Banner
 
 /**
+ * Width × height as a [Long] so the product can't overflow [Int] for any realistic banner dimension.
+ * Shared by [BannerSizeMapper] (picks the largest fit) and [AdUnitBannerSizeResolver] (picks the
+ * smallest declared size), so the two never compute area differently.
+ */
+internal fun bannerArea(width: Int, height: Int): Long = width.toLong() * height.toLong()
+
+/**
  * Resolves a bid's width/height to one of the Monetization SDK's [Banner.BannerSize] values, or null when
  * none of them fit.
  *
@@ -21,7 +28,8 @@ import com.chartboost.sdk.ads.Banner
  * larger than the slot the publisher actually had, and counted a billable impression while doing it.
  *
  * The candidate set is read from [Banner.BannerSize.entries] at runtime, so a size the host's SDK adds in
- * a later release (HALFPAGE 300x600, Monetization 9.14.0) starts being selected with no adapter change.
+ * a future release starts being selected with no adapter change. HALFPAGE (300x600, added in Monetization
+ * 9.14.0) is the size that proved this: it needed no mapper change, only the pinned-version test below.
  *
  * This function is pure. The rejection is logged once by [ChartboostErrorMapper.unsupportedBannerSize] at
  * the call site, so it does not log here.
@@ -35,7 +43,7 @@ internal object BannerSizeMapper {
         // maximum. No two current sizes tie, so this is latent rather than load-bearing.
         return Banner.BannerSize.entries
             .filter { it.width <= width && it.height <= height }
-            .maxByOrNull { it.width.toLong() * it.height.toLong() }
+            .maxByOrNull { bannerArea(it.width, it.height) }
     }
 
     /** Renderable sizes of the host SDK, for error messages. */

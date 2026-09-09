@@ -32,9 +32,11 @@ import io.mockk.mockk
 import io.mockk.verify
 import java.time.Duration
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.prebid.mobile.AdSize
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
@@ -64,9 +66,11 @@ class ChartboostBannerAdapterTest {
     private fun adapter(
         bid: org.prebid.mobile.rendering.bidding.data.bid.Bid? = fakeBid(),
         eventListener: ChartboostPrebidEventListener? = null,
+        adUnitFallbackSize: AdSize? = null,
     ) = ChartboostBannerAdapter(
         context, listener, fakeBidResponse(bid), factory, MainThreadExecutor { it() },
         eventListener = eventListener,
+        adUnitFallbackSize = adUnitFallbackSize,
     )
 
     private fun adapterWithScheduler(scheduler: TeardownScheduler): ChartboostBannerAdapter =
@@ -213,6 +217,40 @@ class ChartboostBannerAdapterTest {
     fun `fills a full-width slot with the largest size that fits`() {
         adapter(bid = fakeBid(adm = "<adm>", width = 412, height = 50))
         assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `bid with no size and a single 300x250 ad unit renders MEDIUM`() {
+        adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = AdSize(300, 250))
+        assertEquals(Banner.BannerSize.MEDIUM, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `bid with no size and a 320x50 ad unit renders STANDARD`() {
+        adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = AdSize(320, 50))
+        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `bid with width but no height falls back to the ad unit size`() {
+        // The 320x0 case: width alone is not "usable", so this must fall back exactly like 0x0 does.
+        adapter(bid = fakeBid(adm = "<adm>", width = 320, height = 0), adUnitFallbackSize = AdSize(320, 50))
+        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `bid with a usable size ignores the ad unit size`() {
+        // The bid already fits STANDARD on its own; a mismatched ad unit fallback (MEDIUM's slot) must
+        // never override a size the bid can already satisfy.
+        adapter(bid = fakeBid(adm = "<adm>", width = 320, height = 50), adUnitFallbackSize = AdSize(300, 250))
+        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `ad unit with no sizes at all is still a no-fill through unsupportedBannerSize`() {
+        adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = null)
+        verify { listener.onAdFailed(any()) }
+        assertNull(factory.lastBannerSize)
     }
 
     @Test
