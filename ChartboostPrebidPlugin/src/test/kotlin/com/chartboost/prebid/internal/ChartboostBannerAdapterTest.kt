@@ -14,6 +14,7 @@ import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
+import com.chartboost.prebid.LogLevel
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.cacheError
 import com.chartboost.prebid.fakes.fakeBid
@@ -42,6 +43,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 private class FakeTeardownScheduler : TeardownScheduler {
     var scheduled: Runnable? = null
@@ -244,6 +246,20 @@ class ChartboostBannerAdapterTest {
         // never override a size the bid can already satisfy.
         adapter(bid = fakeBid(adm = "<adm>", width = 320, height = 50), adUnitFallbackSize = AdSize(300, 250))
         assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `the size substitution is logged at the default log level`() {
+        // The line exists to explain a confusing no-fill, so it has to land at the shipped default (WARN),
+        // not only under DEBUG. 728x90 is used by no other test here, so warnOnce's process-wide de-dupe
+        // cannot have already consumed this message.
+        PluginLog.level = LogLevel.WARN
+        adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = AdSize(728, 90))
+        assertTrue(
+            "expected a warning naming both the bid size and the substituted ad unit size",
+            ShadowLog.getLogsForTag(PluginLog.TAG)
+                .any { it.msg.contains("0x0") && it.msg.contains("728x90") },
+        )
     }
 
     @Test

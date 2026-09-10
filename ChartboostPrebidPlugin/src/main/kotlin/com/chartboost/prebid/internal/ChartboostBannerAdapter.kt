@@ -102,7 +102,10 @@ internal class ChartboostBannerAdapter(
         if (bid.hasUsableBannerSize || fallback == null) return bid.width to bid.height
         // Without this line a no-fill further down reports the substituted dimensions with no hint of
         // where they came from, which reads as the ad unit being at fault when the bid named no size.
-        PluginLog.d(
+        // At WARN so it lands at the default verbosity, and warnOnce because Chartboost demand omits
+        // w/h on every banner bid today, so a per-load line would be pure noise. The message carries
+        // both size pairs, so the de-dupe is per ad unit slot rather than per process.
+        PluginLog.warnOnce(
             "banner bid names no usable size (${bid.width}x${bid.height}); " +
                 "falling back to the ad unit's ${fallback.width}x${fallback.height}",
         )
