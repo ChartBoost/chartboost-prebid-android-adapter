@@ -32,8 +32,8 @@ _Describe what the expected behavior should be or what the requested feature sho
 
 _Provide the following information._
  - Prebid Mobile SDK version: [e.g. 3.3.1]
- - Chartboost Monetization SDK version: [e.g. 9.12.0]
- - Adapter version: [e.g. 309.12.0]
+ - Chartboost Monetization SDK version: [e.g. 9.14.0]
+ - Adapter version: [e.g. 309.14.0]
 
 **Android Environment Details**
 

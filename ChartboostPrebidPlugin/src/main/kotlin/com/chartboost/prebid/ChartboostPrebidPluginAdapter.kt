@@ -8,14 +8,17 @@ package com.chartboost.prebid
 
 import android.content.Context
 import android.view.View
+import com.chartboost.prebid.internal.AdUnitBannerSizeResolver
 import com.chartboost.prebid.internal.ChartboostAdFactory
 import com.chartboost.prebid.internal.ChartboostBannerAdapter
 import com.chartboost.prebid.internal.ChartboostFullscreenAdapter
 import com.chartboost.prebid.internal.DefaultChartboostAdFactory
 import com.chartboost.prebid.internal.PREBID_LOCATION
 import com.chartboost.prebid.internal.PluginLog
+import com.chartboost.prebid.internal.hasUsableBannerSize
 import com.chartboost.sdk.Chartboost
 import org.json.JSONObject
+import org.prebid.mobile.AdSize
 import org.prebid.mobile.api.data.AdFormat
 import org.prebid.mobile.api.rendering.PrebidMobileInterstitialControllerInterface
 import org.prebid.mobile.api.rendering.pluginrenderer.PluginEventListener
@@ -80,7 +83,23 @@ internal class ChartboostPrebidPluginAdapter(
             factory,
             location = resolvedLocation(),
             eventListener = config.eventListener,
+            adUnitFallbackSize = fallbackSizeFor(bidResponse, adUnitConfiguration),
         )
+    }
+
+    /**
+     * Resolves the ad unit's configured banner slot, but only when the winning bid itself names no usable
+     * size. Skipping the ad unit lookup entirely for a usable bid — rather than resolving it and then
+     * discarding the result — is what keeps the ad unit's configuration untouched for the common case.
+     *
+     * [ChartboostBannerAdapter] independently re-checks bid usability before applying whatever this
+     * returns, so a usable bid is never overridden even if a fallback were passed alongside one. That
+     * duplication is deliberate defense-in-depth, not a sign the two checks can drift.
+     */
+    private fun fallbackSizeFor(bidResponse: BidResponse, adUnitConfiguration: AdUnitConfiguration): AdSize? {
+        val bid = bidResponse.winningBid ?: return null
+        if (bid.hasUsableBannerSize) return null
+        return AdUnitBannerSizeResolver.resolveFallbackSize(adUnitConfiguration)
     }
 
     override fun createInterstitialController(

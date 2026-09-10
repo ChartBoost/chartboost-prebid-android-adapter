@@ -12,14 +12,17 @@ import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
 import com.chartboost.prebid.internal.PREBID_LOCATION
+import com.chartboost.sdk.ads.Banner
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.prebid.mobile.AdSize
 import org.prebid.mobile.api.data.AdFormat
 import org.prebid.mobile.configuration.AdUnitConfiguration
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
@@ -147,6 +150,41 @@ class ChartboostPrebidPluginAdapterTest {
             fakeBidResponse(fakeBid(adm = "<adm>", width = 320, height = 50)),
         )
         assertEquals(PREBID_LOCATION, factory.lastLocation)
+    }
+
+    @Test
+    fun `banner adapter falls back to the ad unit's configured size when the bid names none`() {
+        val factory = FakeChartboostAdFactory()
+        val r = ChartboostPrebidPluginAdapter(factory)
+        val adConfig = mockk<AdUnitConfiguration>(relaxed = true)
+        every { adConfig.sizes } returns hashSetOf(AdSize(300, 250))
+        every { adConfig.bannerParameters } returns null
+        r.createBannerAdView(
+            context,
+            mockk<DisplayViewListener>(relaxed = true),
+            null,
+            adConfig,
+            fakeBidResponse(fakeBid(adm = "<adm>", width = 0, height = 0)),
+        )
+        assertEquals(Banner.BannerSize.MEDIUM, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `banner adapter never consults the ad unit size when the bid already has a usable one`() {
+        val factory = FakeChartboostAdFactory()
+        val r = ChartboostPrebidPluginAdapter(factory)
+        val adConfig = mockk<AdUnitConfiguration>(relaxed = true)
+        every { adConfig.sizes } returns hashSetOf(AdSize(300, 250))
+        r.createBannerAdView(
+            context,
+            mockk<DisplayViewListener>(relaxed = true),
+            null,
+            adConfig,
+            fakeBidResponse(fakeBid(adm = "<adm>", width = 320, height = 50)),
+        )
+        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+        verify(exactly = 0) { adConfig.sizes }
+        verify(exactly = 0) { adConfig.bannerParameters }
     }
 
     @Test

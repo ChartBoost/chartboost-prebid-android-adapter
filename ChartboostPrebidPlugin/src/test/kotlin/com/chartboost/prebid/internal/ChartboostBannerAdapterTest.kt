@@ -14,6 +14,7 @@ import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
+import com.chartboost.prebid.LogLevel
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.cacheError
 import com.chartboost.prebid.fakes.fakeBid
@@ -32,14 +33,17 @@ import io.mockk.mockk
 import io.mockk.verify
 import java.time.Duration
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.prebid.mobile.AdSize
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 
 private class FakeTeardownScheduler : TeardownScheduler {
     var scheduled: Runnable? = null
@@ -64,9 +68,11 @@ class ChartboostBannerAdapterTest {
     private fun adapter(
         bid: org.prebid.mobile.rendering.bidding.data.bid.Bid? = fakeBid(),
         eventListener: ChartboostPrebidEventListener? = null,
+        adUnitFallbackSize: AdSize? = null,
     ) = ChartboostBannerAdapter(
         context, listener, fakeBidResponse(bid), factory, MainThreadExecutor { it() },
         eventListener = eventListener,
+        adUnitFallbackSize = adUnitFallbackSize,
     )
 
     private fun adapterWithScheduler(scheduler: TeardownScheduler): ChartboostBannerAdapter =
@@ -213,6 +219,54 @@ class ChartboostBannerAdapterTest {
     fun `fills a full-width slot with the largest size that fits`() {
         adapter(bid = fakeBid(adm = "<adm>", width = 412, height = 50))
         assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `bid with no size and a single 300x250 ad unit renders MEDIUM`() {
+        adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = AdSize(300, 250))
+        assertEquals(Banner.BannerSize.MEDIUM, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `bid with no size and a 320x50 ad unit renders STANDARD`() {
+        adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = AdSize(320, 50))
+        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `bid with width but no height falls back to the ad unit size`() {
+        // The 320x0 case: width alone is not "usable", so this must fall back exactly like 0x0 does.
+        adapter(bid = fakeBid(adm = "<adm>", width = 320, height = 0), adUnitFallbackSize = AdSize(320, 50))
+        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `bid with a usable size ignores the ad unit size`() {
+        // The bid already fits STANDARD on its own; a mismatched ad unit fallback (MEDIUM's slot) must
+        // never override a size the bid can already satisfy.
+        adapter(bid = fakeBid(adm = "<adm>", width = 320, height = 50), adUnitFallbackSize = AdSize(300, 250))
+        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+    }
+
+    @Test
+    fun `the size substitution is logged at the default log level`() {
+        // The line exists to explain a confusing no-fill, so it has to land at the shipped default (WARN),
+        // not only under DEBUG. 728x90 is used by no other test here, so warnOnce's process-wide de-dupe
+        // cannot have already consumed this message.
+        PluginLog.level = LogLevel.WARN
+        adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = AdSize(728, 90))
+        assertTrue(
+            "expected a warning naming both the bid size and the substituted ad unit size",
+            ShadowLog.getLogsForTag(PluginLog.TAG)
+                .any { it.msg.contains("0x0") && it.msg.contains("728x90") },
+        )
+    }
+
+    @Test
+    fun `ad unit with no sizes at all is still a no-fill through unsupportedBannerSize`() {
+        adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = null)
+        verify { listener.onAdFailed(any()) }
+        assertNull(factory.lastBannerSize)
     }
 
     @Test
