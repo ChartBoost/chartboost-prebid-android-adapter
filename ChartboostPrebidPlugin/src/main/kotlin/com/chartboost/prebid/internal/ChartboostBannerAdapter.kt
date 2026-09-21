@@ -28,16 +28,15 @@ import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 
 /**
- * Banner host view and the Chartboost-callback to Prebid-DisplayViewListener bridge. It is both the View
- * returned by createBannerAdView and the SDK's BannerCallback, holding one [Banner] as its child.
+ * Banner host view and the bridge from Chartboost callbacks to Prebid's DisplayViewListener. It is both
+ * the View returned by createBannerAdView and the SDK's BannerCallback, holding one [Banner] as its child.
  *
- * The banner path has no separate loadAd, so caching is kicked off at construction. We report "loaded" on
- * cache success (not on show, which re-fires under refresh) and "displayed" on impression.
+ * The banner path has no separate loadAd, so caching starts at construction. "loaded" is reported on cache
+ * success, not on show, which re-fires under refresh, and "displayed" on impression.
  *
- * Teardown is driven entirely by window detachment. A view that is created but never attached (the
- * publisher discards it before layout) never reaches onDetachedFromWindow, so Banner.detach() never fires
- * and the underlying ad is only reclaimed at GC; Prebid's plugin contract has no lifecycle-end hook for a
- * created-but-never-displayed view.
+ * Teardown is driven entirely by window detachment, so a view created but never attached never reaches
+ * onDetachedFromWindow and its ad is only reclaimed at GC. Prebid's plugin contract has no lifecycle-end
+ * hook for that case.
  *
  * A bid that names no usable size (see [hasUsableBannerSize]) falls back to [adUnitFallbackSize], the ad
  * unit's own configured slot, resolved by the caller via [AdUnitBannerSizeResolver]. A bid with a usable
@@ -74,8 +73,6 @@ internal class ChartboostBannerAdapter(
             val (width, height) = bannerDimensions(winningBid)
             val size = BannerSizeMapper.map(width, height)
             if (size == null) {
-                // No Chartboost size fits inside the negotiated slot, so there is nothing to render there.
-                // Rendering something larger than the slot would still count a billable impression.
                 mainThread.execute {
                     reportFailed(ChartboostErrorMapper.unsupportedBannerSize(width, height))
                 }
@@ -88,23 +85,19 @@ internal class ChartboostBannerAdapter(
     /**
      * The bid's own width/height when usable, otherwise [adUnitFallbackSize] when one was resolved.
      *
-     * Chartboost's own demand omits w/h on banner bids today; without this fallback every such bid would
-     * be a hard no-fill, since Prebid picks a plugin once and does not retry through its own renderer on a
-     * decline.
+     * Chartboost's own demand omits w/h on banner bids today, and Prebid picks a plugin once without
+     * retrying through its own renderer on a decline, so without the fallback every such bid is a hard
+     * no-fill.
      *
-     * Re-checks [hasUsableBannerSize] rather than trusting the caller to only pass a fallback when it is
-     * needed. The caller (the plugin adapter) already skips resolving one for a usable bid, but this
-     * class still must never let a populated [adUnitFallbackSize] override a bid that can stand on its
-     * own — deliberate defense-in-depth, verified independently of the caller's own check.
+     * Re-checks [hasUsableBannerSize] rather than trusting the caller, so a populated
+     * [adUnitFallbackSize] can never override a bid that stands on its own.
      */
     private fun bannerDimensions(bid: Bid): Pair<Int, Int> {
         val fallback = adUnitFallbackSize
         if (bid.hasUsableBannerSize || fallback == null) return bid.width to bid.height
-        // Without this line a no-fill further down reports the substituted dimensions with no hint of
-        // where they came from, which reads as the ad unit being at fault when the bid named no size.
-        // At WARN so it lands at the default verbosity, and warnOnce because Chartboost demand omits
-        // w/h on every banner bid today, so a per-load line would be pure noise. The message carries
-        // both size pairs, so the de-dupe is per ad unit slot rather than per process.
+        // Without this line a later no-fill reports the substituted dimensions with no hint of where they
+        // came from, which reads as the ad unit being at fault. warnOnce, since this fires on effectively
+        // every banner bid today; the message carries both size pairs, so the de-dupe is per slot.
         PluginLog.warnOnce(
             "banner bid names no usable size (${bid.width}x${bid.height}); " +
                 "falling back to the ad unit's ${fallback.width}x${fallback.height}",
@@ -113,14 +106,13 @@ internal class ChartboostBannerAdapter(
     }
 
     private fun createAndCache(size: Banner.BannerSize, adm: String) {
-        // Constructing a Chartboost Banner throws if the Monetization SDK was never started. Never let
-        // that escape createBannerAdView; report it through the loading delegate instead.
+        // Report through the loading delegate rather than letting a construction failure escape
+        // createBannerAdView.
         try {
             val created = factory.createBanner(context, location, size, this, MediationFactory.create())
             banner = created
             addView(created)
-            // No separate loadAd on the banner path, so caching starts here. cache() is async internally
-            // (launches on the SDK's main scope), so it does not re-enter the loading delegate synchronously.
+            // cache() is async internally, so it does not re-enter the loading delegate synchronously.
             created.cache(adm)
         } catch (e: Exception) {
             mainThread.execute { reportFailed(ChartboostErrorMapper.adCreationFailed(e)) }
@@ -129,8 +121,8 @@ internal class ChartboostBannerAdapter(
 
     /** Reports a load failure to the Prebid delegate and the optional plugin listener, at most once. */
     private fun reportFailed(error: AdException) {
-        // Guard mirrors onAdLoaded's own !failedLatch.hasFired check: a cache error arriving after a
-        // successful load (e.g. an internal re-cache) must not fire FAILED-after-LOADED.
+        // Mirrors onAdLoaded's own !failedLatch.hasFired check: a cache error arriving after a successful
+        // load must not fire FAILED-after-LOADED.
         if (!loadedLatch.hasFired && failedLatch.fire()) {
             displayViewListener.onAdFailed(error)
             eventListener?.onAdFailed(ChartboostAdFormat.BANNER, error)
@@ -155,9 +147,8 @@ internal class ChartboostBannerAdapter(
     }
 
     override fun onAdShown(event: ShowEvent, error: ShowError?) {
-        // Banner show happens after a successful load (loaded was already reported off cache). Prebid has no
-        // terminal show-failed signal, and a failed show fires no impression, which is correct
-        // billing. Log only; never re-signal onAdFailed after onAdLoaded.
+        // Loaded was already reported off cache, and a failed show fires no impression, which is correct
+        // billing, so log only.
         if (error != null) PluginLog.w("banner show failed: ${ChartboostErrorMapper.mapShow(error)}")
     }
 
@@ -178,17 +169,14 @@ internal class ChartboostBannerAdapter(
     }
 
     override fun onAdExpired(event: ExpirationEvent) {
-        // The banner caches and shows in one step, so an expiry here is rare and almost always
-        // post-display; reporting it as a load failure after onAdLoaded would break Prebid's contract.
-        // Log it instead — the fullscreen path, which holds a cached ad before show, surfaces expiry as a
-        // reload signal.
+        // The banner caches and shows in one step, so expiry here is almost always post-display, and
+        // reporting a load failure after onAdLoaded would break Prebid's contract.
         PluginLog.w("banner ad expired [reason ${event.reason}]")
     }
 
     public override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        // A re-attach within the delay window cancels the pending teardown. If the delay has already
-        // fired (true teardown), this is a no-op.
+        // A re-attach inside the delay window cancels the pending teardown; once it has fired, a no-op.
         teardownAction?.let { cancelTeardown(it) }
         teardownAction = null
         if (destroyed.hasFired) {
@@ -198,22 +186,17 @@ internal class ChartboostBannerAdapter(
 
     public override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        // Cancel any previously-scheduled teardown first to avoid accumulating runnables under
-        // rapid RecyclerView/ViewPager recycling, then schedule a fresh one.
-        //
-        // On re-attach within TEARDOWN_DELAY_MS the pending action is cancelled in onAttachedToWindow,
-        // so no teardown fires — the counter-based approach is gone entirely.
-        //
-        // Known limitation: if a re-attach happens after the delay has already fired, the banner has
-        // already been torn down. Prebid's plugin contract provides no lifecycle-end signal, so any
-        // timer-based teardown shares this edge case; it is inherent to the deferred approach.
+        // Cancel any scheduled teardown before scheduling a fresh one, so rapid RecyclerView/ViewPager
+        // recycling cannot accumulate runnables. A re-attach within TEARDOWN_DELAY_MS cancels it in
+        // onAttachedToWindow; a re-attach after it has fired finds the banner already torn down, which any
+        // timer-based teardown shares since Prebid's plugin contract has no lifecycle-end signal.
         teardownAction?.let { cancelTeardown(it) }
         val action = Runnable {
             if (!isAttachedToWindow && destroyed.fire()) {
                 banner?.detach()
                 banner = null
-                // Also drop the publisher-supplied listener so a RecyclerView-cached (recycled-but-not-GC'd)
-                // view doesn't pin it; every use is already null-safe.
+                // Drop the publisher listener too, so a recycled-but-not-GC'd view does not pin it; every
+                // use is already null-safe.
                 eventListener = null
             }
         }

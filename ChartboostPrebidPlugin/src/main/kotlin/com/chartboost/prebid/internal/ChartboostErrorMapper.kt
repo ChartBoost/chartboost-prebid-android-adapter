@@ -12,11 +12,10 @@ import com.chartboost.sdk.events.ShowError
 import org.prebid.mobile.api.exceptions.AdException
 
 /**
- * Maps a Chartboost [CacheError] to a Prebid [AdException], surfacing the raw Chartboost code in the
- * message. `AdException(type, message)` is the only constructor, so the code rides in the
- * message string. No blanket internal error; an unknown/future code still carries its raw value and is
- * never swallowed. Show errors are not mapped: Prebid has no terminal show-failed signal, so they are
- * logged at the call site instead.
+ * Maps a Chartboost [CacheError] to a Prebid [AdException], keeping the raw Chartboost code in the
+ * message, since `AdException(type, message)` is the only constructor. An unknown or future code still
+ * carries its raw value rather than collapsing into a blanket internal error. Show errors are not mapped:
+ * Prebid has no terminal show-failed signal, so they are logged at the call site instead.
  */
 internal object ChartboostErrorMapper {
 
@@ -45,11 +44,7 @@ internal object ChartboostErrorMapper {
 
     fun admInvalid(): AdException = adException("Empty or invalid ADM for a Chartboost-flagged bid")
 
-    /**
-     * No Banner.BannerSize fits inside the negotiated slot, so there is nothing the SDK could render there.
-     * Declining is deliberate: rendering a size larger than the slot would still count a billable
-     * impression.
-     */
+    /** No Chartboost banner size fits inside the negotiated slot. */
     fun unsupportedBannerSize(width: Int, height: Int): AdException =
         adException(
             "No Chartboost banner size fits the negotiated ${width}x$height slot " +
@@ -61,15 +56,15 @@ internal object ChartboostErrorMapper {
         adException("Chartboost ad expired before display [reason ${event.reason}]")
 
     /**
-     * Constructing a Chartboost ad throws synchronously (e.g. when the Monetization SDK was never
-     * started). Map any such failure to an AdException so it never escapes the plugin entry points.
+     * Constructing a Chartboost ad throws synchronously, e.g. when the Monetization SDK was never started.
+     * Mapping it keeps the failure from escaping the plugin entry points.
      */
     fun adCreationFailed(t: Throwable): AdException =
         adException("Failed to create Chartboost ad: ${t.message ?: t.javaClass.simpleName}")
 
     private fun adException(message: String): AdException {
-        // WARN, not DEBUG: a load failure is invisible to a publisher on the default log level otherwise,
-        // and these only fire on an actual failure, so they do not add steady-state noise.
+        // WARN, not DEBUG: a load failure would otherwise be invisible at the default level, and these
+        // only fire on an actual failure.
         PluginLog.w(message)
         return AdException(AdException.THIRD_PARTY, message)
     }

@@ -12,9 +12,9 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 /**
- * Marshals a Prebid forward onto the Android main thread. Chartboost callbacks already arrive on main
- * (verified in the SDK's UiPoster), so this is a defensive seam, also the injection point that keeps the
- * bridge mapping unit-testable without Robolectric.
+ * Marshals a Prebid forward onto the Android main thread. Chartboost callbacks already arrive on main, so
+ * this is a defensive seam, and the injection point that keeps the bridge mapping unit-testable without
+ * Robolectric.
  */
 internal fun interface MainThreadExecutor {
     fun execute(block: () -> Unit)
@@ -23,8 +23,8 @@ internal fun interface MainThreadExecutor {
 internal object DefaultMainThreadExecutor : MainThreadExecutor {
     private val scope = CoroutineScope(Dispatchers.Main + SupervisorJob())
 
-    // Dispatchers.Main always dispatches (even when already on the main thread, it posts to the queue), so a
-    // Prebid forward never re-enters core synchronously inside createBannerAdView/createInterstitialController.
+    // Dispatchers.Main always dispatches, even from the main thread, so a Prebid forward never re-enters
+    // core synchronously inside createBannerAdView/createInterstitialController.
     override fun execute(block: () -> Unit) {
         scope.launch { block() }
     }

@@ -31,10 +31,10 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 
 /**
  * Prebid Mobile plugin adapter that hands Chartboost-flagged winning bids to the Chartboost Monetization
- * SDK for rendering. A thin, stateless-per-load bridge: each ad unit maps to one freshly built per-load adapter
- * with no shared mutable state. Registered via [ChartboostPrebidAdapter.register]; Prebid drives it
- * purely through the [PrebidMobilePluginRenderer] interface, so the type itself is internal — publishers
- * read the name/version through [ChartboostPrebidAdapter].
+ * SDK for rendering. Each ad unit maps to one freshly built per-load adapter with no shared mutable
+ * state. Registered via [ChartboostPrebidAdapter.register]; Prebid drives it purely through the
+ * [PrebidMobilePluginRenderer] interface, so the type is internal and publishers read the name and
+ * version through [ChartboostPrebidAdapter].
  */
 internal class ChartboostPrebidPluginAdapter(
     private val factory: ChartboostAdFactory,
@@ -49,8 +49,7 @@ internal class ChartboostPrebidPluginAdapter(
     override fun getVersion(): String = ADAPTER_VERSION
 
     override fun getData(): JSONObject? {
-        // Fresh per access, no publisher-facing call. A null token still returns an object and warns once,
-        // never gating the bid.
+        // Fresh per access. A null token still returns an object and warns once, never gating the bid.
         val token = bidderToken()
         if (token == null) {
             PluginLog.warnOnce("Chartboost bidder token unavailable; is the SDK started?")
@@ -73,8 +72,8 @@ internal class ChartboostPrebidPluginAdapter(
         adUnitConfiguration: AdUnitConfiguration,
         bidResponse: BidResponse,
     ): View {
-        // Reaching here means Prebid matched this plugin's name+version and routed the win to us; a log
-        // here is the only observable proof routing did not silently fall back to Prebid's own rendering.
+        // Reaching here means Prebid matched this plugin's name and version and routed the win to us. The
+        // log is the only observable proof routing did not fall back to Prebid's own rendering.
         PluginLog.i("Chartboost plugin won routing for a banner; rendering via the Monetization SDK")
         return ChartboostBannerAdapter(
             context,
@@ -88,13 +87,10 @@ internal class ChartboostPrebidPluginAdapter(
     }
 
     /**
-     * Resolves the ad unit's configured banner slot, but only when the winning bid itself names no usable
-     * size. Skipping the ad unit lookup entirely for a usable bid — rather than resolving it and then
-     * discarding the result — is what keeps the ad unit's configuration untouched for the common case.
-     *
-     * [ChartboostBannerAdapter] independently re-checks bid usability before applying whatever this
-     * returns, so a usable bid is never overridden even if a fallback were passed alongside one. That
-     * duplication is deliberate defense-in-depth, not a sign the two checks can drift.
+     * Resolves the ad unit's configured banner slot, but only when the winning bid names no usable size.
+     * Skipping the lookup for a usable bid leaves the ad unit's configuration untouched in the common
+     * case. [ChartboostBannerAdapter] re-checks bid usability before applying the result, so a usable bid
+     * is never overridden.
      */
     private fun fallbackSizeFor(bidResponse: BidResponse, adUnitConfiguration: AdUnitConfiguration): AdSize? {
         val bid = bidResponse.winningBid ?: return null
