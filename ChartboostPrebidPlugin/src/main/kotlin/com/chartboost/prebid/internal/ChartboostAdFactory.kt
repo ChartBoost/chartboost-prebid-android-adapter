@@ -16,8 +16,8 @@ import com.chartboost.sdk.callbacks.InterstitialCallback
 import com.chartboost.sdk.callbacks.RewardedCallback
 
 /**
- * The single mocked boundary for tests. Production news up real SDK ads; tests inject fakes that capture
- * the callback and record cache/show/destroy so the bridge mapping can be table-tested without the SDK.
+ * The single mocked boundary for tests. Production builds real SDK ads; tests inject fakes that capture
+ * the callback and record cache/show/destroy, so the bridge mapping is testable without the SDK.
  */
 internal interface ChartboostAdFactory {
 
@@ -54,7 +54,7 @@ internal class DefaultChartboostAdFactory : ChartboostAdFactory {
         mediation: Mediation,
     ): Banner = Banner(context, location, size, callback, mediation)
 
-    // Interstitial/Rewarded read the global ContextProvider.context, so the passed context is unused here;
+    // Interstitial/Rewarded read the global ContextProvider.context, so the passed context is unused;
     // the factory keeps it for a uniform signature.
     override fun createInterstitial(
         context: Context,

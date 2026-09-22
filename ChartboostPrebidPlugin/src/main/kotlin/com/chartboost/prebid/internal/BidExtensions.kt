@@ -18,16 +18,12 @@ internal val Bid.admOrNull: String?
     get() = adm?.takeIf { it.isNotBlank() }
 
 /**
- * True when [Bid.getWidth] and [Bid.getHeight] are both usable (greater than zero).
+ * True when [Bid.getWidth] and [Bid.getHeight] are both greater than zero.
  *
  * Prebid's `Bid.fromJSONObject` reads a missing `w`/`h` with org.json's `optInt`, which defaults to 0, so
- * a bid that names no size at all is indistinguishable at this point from one that explicitly won at
- * 0x0. Either dimension missing is enough to fail this check — a 320x0 bid is just as unusable as 0x0 —
- * so a bid that fails it should fall back to the ad unit's own configured size rather than becoming a
- * no-fill outright.
- *
- * This is a deliberate difference from iOS, which currently guards on both dimensions being zero and so
- * still no-fills a 320x0 bid. iOS is expected to align to this behaviour, not the other way around.
+ * a bid naming no size is indistinguishable from one that explicitly won at 0x0. Either dimension missing
+ * fails the check, since a 320x0 bid is as unusable as 0x0; such a bid falls back to the ad unit's own
+ * configured size rather than becoming a no-fill outright.
  */
 internal val Bid.hasUsableBannerSize: Boolean
     get() = width > 0 && height > 0

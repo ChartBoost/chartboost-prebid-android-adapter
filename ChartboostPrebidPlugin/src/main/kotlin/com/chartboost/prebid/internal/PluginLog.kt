@@ -10,15 +10,12 @@ import android.util.Log
 import com.chartboost.prebid.LogLevel
 import java.util.concurrent.ConcurrentHashMap
 
-/**
- * Thin logging wrapper. Never logs the bidder token or ad markup. [warnOnce] de-dupes a warning to one
- * line per process, used for the token-absent path.
- */
+/** Thin logging wrapper. Never logs the bidder token or ad markup. */
 internal object PluginLog {
     internal const val TAG = "ChartboostPrebid"
     private val warned: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
-    /** Current verbosity. Set by [com.chartboost.prebid.ChartboostPrebidAdapter.register]; each call overwrites it. Thread-safe. */
+    /** Current verbosity, set by [com.chartboost.prebid.ChartboostPrebidAdapter.register]. */
     @Volatile var level: LogLevel = LogLevel.WARN
 
     fun d(message: String) {
