@@ -8,10 +8,14 @@ that Chartboost Mediation and MAX drive, plugged into Prebid.
 
 | Component                | Version |
 | ------------------------ | ------- |
-| Prebid Mobile SDK        | 3.3.1+  |
+| Prebid Mobile SDK        | 3.3.1+ (tested through 3.4.x) |
 | Chartboost Monetization SDK | 9.14.0+ |
 | Android API              | 21+     |
 | kotlinx-coroutines-android | present at runtime (ships transitively with the Chartboost Monetization SDK) |
+
+If you run Prebid through its AdMob or AppLovin MAX adapters, interstitial and rewarded ads need Prebid
+Mobile 3.4.0 or later. On 3.3.x those adapters render fullscreen ads with Prebid's own renderer and never
+call plugin renderers, so this adapter does not get the bid. Banners work on 3.3.x on every path.
 
 ## How it works
 
