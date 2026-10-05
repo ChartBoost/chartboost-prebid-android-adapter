@@ -47,7 +47,10 @@ public object ChartboostPrebidAdapter {
         PrebidMobilePluginRegister.getInstance().unregisterPlugin(ChartboostPrebidPluginAdapter())
     }
 
-    /** Logs the registered name and version at INFO, to check them against the Prebid Server stamp. */
+    /**
+     * Logs the registered name and version when the log level is WARN or DEBUG, to check them against the
+     * Prebid Server stamp.
+     */
     public fun logIntegrationInfo() {
         PluginLog.i("ChartboostPrebidAdapter: name=$adapterName version=$adapterVersion — version must byte-match the Prebid Server rendererVersion or routing falls back to Prebid's own rendering")
     }
