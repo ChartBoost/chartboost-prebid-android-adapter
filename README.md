@@ -141,8 +141,8 @@ Given a winning bid's negotiated width and height, this adapter selects the **la
 fits entirely inside** the requested dimensions. A full-width slot of, say, 412x50 renders `STANDARD`
 320x50 within it, the same way a fixed size is fitted into an adaptive banner slot.
 
-**Bid with no declared size.** Prebid reads a missing width/height as 0x0, and Chartboost's own demand
-omits width/height on banner bids today. Rather than treat that as an automatic no-fill, the adapter falls
+**Bid with no declared size.** Prebid reads a missing width/height as 0x0, and some Chartboost demand
+omits width/height on banner bids. Rather than treat that as an automatic no-fill, the adapter falls
 back to the size configured on the ad unit itself — either `BannerParameters.adSizes` or the older
 deprecated size setters, matching the precedence Prebid Mobile uses when it builds the request. The
 fallback also applies when only one dimension is missing (e.g. 320x0), since that is just as unusable as
@@ -152,6 +152,10 @@ the only choice that cannot overflow a slot the publisher sized for something sm
 Monetization SDK cannot render into are passed over first, so an ad unit offering both 320x50 and 50x320
 resolves to 320x50 rather than declining the bid. A bid that already carries a usable width and height is
 unaffected; the ad unit's configured size is never consulted for it.
+
+The fallback needs a size on the ad unit, so it only works when the ad renders through Prebid's own
+`BannerView`, standalone or with GAM. Prebid's AdMob and AppLovin MAX mediation adapters build their ad unit
+with no size, so on those paths a bid with no declared size is still a no-fill.
 
 This substitution decides which `Banner.BannerSize` gets rendered. It does not rewrite the bid, so
 anything Prebid Mobile derives from the bid's own width and height, such as the `hb_size` targeting key,
@@ -167,14 +171,11 @@ needs 50dp of height. The adapter never renders a size larger than the slot it w
 still count a billable impression while overflowing the publisher's layout.
 
 The size set is read from the host SDK at runtime, so a size added in a later Monetization SDK release
-becomes selectable without an adapter release. The Chartboost Prebid Server adapter has to offer that size
-in the auction as well, so a newly added size needs its list updated too before it can win a bid.
+becomes selectable without an adapter release. Chartboost's server side has to support a new size too
+before a bid for it can win.
 
-If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size. The
-Chartboost Prebid Server adapter filters each impression's `imp.Banner.format` down to the sizes it can
-render and rejects a banner-only impression that offers none of them, so most size mismatches surface
-upstream rather than as a no-fill on the device. An impression that also carries video keeps its video slot
-and loses only the banner.
+If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size, or a
+bid with no declared size on the AdMob or MAX path.
 
 ## Consent and privacy
 
