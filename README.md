@@ -2,7 +2,7 @@
 
 A Prebid Mobile plugin adapter that hands Chartboost-flagged winning bids to the Chartboost
 Monetization SDK for rendering, instead of letting Prebid render them. Same Monetization SDK surface
-that Chartboost Mediation and MAX drive, plugged into Prebid.
+that Chartboost Mediation drives, plugged into Prebid.
 
 ## Minimum Requirements
 
