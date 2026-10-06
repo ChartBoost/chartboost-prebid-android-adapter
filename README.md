@@ -205,8 +205,10 @@ describes what it covers.
 ## Versioning
 
 `BuildConfig.ADAPTER_VERSION` is computed in the root `build.gradle.kts` from the scheme
-`(prebid_sdk_major × 100 + monetization_major).(monetization_minor).(monetization_patch × 100 + adapter_revision)`,
-using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `309.14.0`). The Prebid
+`(prebid_sdk_major × 100 + monetization_major).(monetization_minor).(adapter_revision)`,
+using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `309.14.0`). The
+Monetization patch is not encoded, the same as the iOS adapter: the adapter supports every patch of its
+certified Monetization minor, so a Monetization patch release needs no new adapter version. The Prebid
 Server adapter echoes this value back from the request, so the client-registered version and the
 server-stamped version match by construction — no shared constant or lock-step release. Override with
 `-PADAPTER_VERSION=X.Y.Z` to pin it.
