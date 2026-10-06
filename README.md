@@ -13,10 +13,6 @@ that Chartboost Mediation and MAX drive, plugged into Prebid.
 | Android API              | 21+     |
 | kotlinx-coroutines-android | present at runtime (ships transitively with the Chartboost Monetization SDK) |
 
-If you run Prebid through its AdMob or AppLovin MAX adapters, interstitial and rewarded ads need Prebid
-Mobile 3.4.0 or later. On 3.3.x those adapters render fullscreen ads with Prebid's own renderer and never
-call plugin renderers, so this adapter does not get the bid. Banners work on 3.3.x on every path.
-
 ## How it works
 
 Prebid Mobile routes a winning bid to a registered plugin only when all of these hold:
@@ -157,10 +153,6 @@ Monetization SDK cannot render into are passed over first, so an ad unit offerin
 resolves to 320x50 rather than declining the bid. A bid that already carries a usable width and height is
 unaffected; the ad unit's configured size is never consulted for it.
 
-The fallback needs a size on the ad unit, so it only works when the ad renders through Prebid's own
-`BannerView`, standalone or with GAM. Prebid's AdMob and AppLovin MAX mediation adapters build their ad unit
-with no size, so on those paths a bid with no declared size is still a no-fill.
-
 This substitution decides which `Banner.BannerSize` gets rendered. It does not rewrite the bid, so
 anything Prebid Mobile derives from the bid's own width and height, such as the `hb_size` targeting key,
 still reflects what the bidder sent. Reporting a real width and height on the bid remains a server-side
@@ -178,8 +170,7 @@ The size set is read from the host SDK at runtime, so a size added in a later Mo
 becomes selectable without an adapter release. Chartboost's server side has to support a new size too
 before a bid for it can win.
 
-If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size, or a
-bid with no declared size on the AdMob or MAX path.
+If you see unexpected banner no-fills, the usual cause is a slot too small for any Chartboost size.
 
 ## Consent and privacy
 
