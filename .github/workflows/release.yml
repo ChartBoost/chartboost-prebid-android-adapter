@@ -2,9 +2,11 @@
 # the public Artifactory repo (chartboost-ads) and cuts a GitHub Release with the AAR attached. Mirrors the
 # Chartboost Mediation adapters' release flow: pushing a `v<version>` tag IS the release.
 #
-# There is no reviewer gate (matching the mediation adapters), so public-publish safety rests on tag
-# discipline: v* tags are the only path that publishes to the public repo, and pushing one is restricted to
-# admins by a tag ruleset. The tag must equal the computed adapter version (v<printAdapterVersion>), so the
+# There is no reviewer gate here (matching the mediation adapters), so public-publish safety rests on tag
+# discipline: v* tags are the only path in these workflows that publishes to the public repo. A tag ruleset
+# lets only admins push one, but auto-release.yml also pushes them with an admin PAT, so this job refuses a
+# tag whose commit is not on main. That stops mistakes. A tag run uses the tagged commit's own workflow file,
+# so only the environment rules in repo settings stop a writer on purpose. The tag must equal the computed adapter version (v<printAdapterVersion>), so the
 # published coordinate, the BuildConfig.ADAPTER_VERSION the Prebid Server echoes back, and the git tag all
 # agree by construction.
 #
@@ -31,6 +33,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        # Full history, so the next step can see origin/main.
+        fetch-depth: 0
+
+    - name: Verify the tagged commit is on main
+      run: ./scripts/verify_on_main.sh
 
     - name: Set up JDK
       uses: ./.github/actions/setup-jdk

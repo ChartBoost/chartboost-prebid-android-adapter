@@ -28,9 +28,12 @@ permissions:
 jobs:
   auto-release:
     # Only on a merged release-prep PR (head branch release/<version>, opened from this repo, not a fork) or
-    # a manual dispatch. A plain PR close without merge is ignored.
+    # a manual dispatch from main. A plain PR close without merge is ignored. A dispatch from any other branch
+    # is ignored too, so a release can't be tagged by mistake from unmerged code. This check lives in the
+    # workflow file, which a branch can edit, so only the release-approval environment rules stop a writer
+    # on purpose.
     if: >-
-      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
       (github.event.pull_request.merged == true &&
        startsWith(github.event.pull_request.head.ref, 'release/') &&
        github.event.pull_request.head.repo.full_name == github.repository)
@@ -45,7 +48,12 @@ jobs:
       with:
         # Check out with the PAT so the tag push below is attributed to it and triggers release.yml.
         token: ${{ secrets.RELEASE_PAT }}
+        # A merged PR's default ref is the PR merge ref, not main. Tag the commit the merge put on main.
+        ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
         fetch-depth: 0
+
+    - name: Verify the commit is on main
+      run: ./scripts/verify_on_main.sh
 
     - name: Set up JDK
       uses: ./.github/actions/setup-jdk
