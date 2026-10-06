@@ -5,10 +5,11 @@
 # There is no reviewer gate here (matching the mediation adapters), so public-publish safety rests on tag
 # discipline: v* tags are the only path in these workflows that publishes to the public repo. A tag ruleset
 # lets only admins push one, but auto-release.yml also pushes them with an admin PAT, so this job refuses a
-# tag whose commit is not on main. That stops mistakes. A tag run uses the tagged commit's own workflow file,
-# so only the environment rules in repo settings stop a writer on purpose. The tag must equal the computed adapter version (v<printAdapterVersion>), so the
-# published coordinate, the BuildConfig.ADAPTER_VERSION the Prebid Server echoes back, and the git tag all
-# agree by construction.
+# tag whose commit is not on main. That stops mistakes. A tag run uses the tagged commit's own workflow
+# file, so only the environment rules in repo settings stop a writer on purpose.
+#
+# The tag must equal the computed adapter version (v<printAdapterVersion>), so the published coordinate,
+# the BuildConfig.ADAPTER_VERSION the Prebid Server echoes back, and the git tag all agree by construction.
 #
 # Required secrets (on the CI environment): JFROG_USER / JFROG_PASS with write access to chartboost-ads.
 name: release

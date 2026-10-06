@@ -30,6 +30,11 @@ git_quiet clone "${WORK}/origin.git" "${WORK}/clone"
 # A tag named like the remote branch, pointing at the unmerged commit.
 git_quiet clone "${WORK}/origin.git" "${WORK}/clone-with-tag"
 git_quiet -C "${WORK}/clone-with-tag" tag origin/main "${FEATURE_COMMIT}"
+# Clones checked out at one commit with no argument passed, the way the workflows call the script.
+git_quiet clone "${WORK}/origin.git" "${WORK}/at-feature"
+git_quiet -C "${WORK}/at-feature" checkout --detach "${FEATURE_COMMIT}"
+git_quiet clone "${WORK}/origin.git" "${WORK}/at-main-parent"
+git_quiet -C "${WORK}/at-main-parent" checkout --detach "${MAIN_PARENT_COMMIT}"
 git_quiet init -b main "${WORK}/no-origin"
 git_quiet -C "${WORK}/no-origin" commit --allow-empty -m "local only"
 
@@ -49,6 +54,8 @@ expect() {
 expect "the main tip passes" pass "${WORK}/clone"
 expect "an older commit on main passes" pass "${WORK}/clone" "${MAIN_PARENT_COMMIT}"
 expect "a commit only on an unmerged branch fails" fail "${WORK}/clone" "${FEATURE_COMMIT}"
+expect "HEAD on an older main commit passes" pass "${WORK}/at-main-parent"
+expect "HEAD on an unmerged commit fails" fail "${WORK}/at-feature"
 expect "a tag named origin/main does not make an unmerged commit pass" fail "${WORK}/clone-with-tag" "${FEATURE_COMMIT}"
 expect "a clone without origin/main fails" fail "${WORK}/no-origin"
 
