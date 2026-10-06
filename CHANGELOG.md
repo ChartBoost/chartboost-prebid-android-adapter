@@ -9,8 +9,4 @@ All official releases can be found on this repository's [releases page](https://
 
 ### 309.14.0
 - This version of the adapter has been certified with Prebid Mobile SDK 3.3.1 and Chartboost Monetization SDK 9.14.0.
-- Fixed: a banner bid that carries no usable width/height now falls back to the ad unit's configured size instead of becoming a no-fill.
-
-### 309.12.0
-- This version of the adapter has been certified with Prebid Mobile SDK 3.3.1 and Chartboost Monetization SDK 9.12.0.
 - Initial release.

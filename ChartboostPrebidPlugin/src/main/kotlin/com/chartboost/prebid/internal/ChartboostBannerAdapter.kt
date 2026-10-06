@@ -85,7 +85,7 @@ internal class ChartboostBannerAdapter(
     /**
      * The bid's own width/height when usable, otherwise [adUnitFallbackSize] when one was resolved.
      *
-     * Chartboost's own demand omits w/h on banner bids today, and Prebid picks a plugin once without
+     * Some Chartboost demand omits w/h on banner bids, and Prebid picks a plugin once without
      * retrying through its own renderer on a decline, so without the fallback every such bid is a hard
      * no-fill.
      *
@@ -96,8 +96,8 @@ internal class ChartboostBannerAdapter(
         val fallback = adUnitFallbackSize
         if (bid.hasUsableBannerSize || fallback == null) return bid.width to bid.height
         // Without this line a later no-fill reports the substituted dimensions with no hint of where they
-        // came from, which reads as the ad unit being at fault. warnOnce, since this fires on effectively
-        // every banner bid today; the message carries both size pairs, so the de-dupe is per slot.
+        // came from, which reads as the ad unit being at fault. warnOnce, since this fires on every
+        // sizeless banner bid; the message carries both size pairs, so the de-dupe is per slot.
         PluginLog.warnOnce(
             "banner bid names no usable size (${bid.width}x${bid.height}); " +
                 "falling back to the ad unit's ${fallback.width}x${fallback.height}",
