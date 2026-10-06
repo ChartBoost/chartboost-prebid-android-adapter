@@ -22,7 +22,7 @@ plugins {
 val adapterVersion: String = ((findProperty("ADAPTER_VERSION") as String?) ?: run {
     val prebidMajorScale = 100 // lifts the Prebid major into the hundreds place of the first component
     val monPin = (findProperty("chartboostSdkVersion") as String?) ?: "9.14.0"
-    val prebidPin = (findProperty("prebidMobileVersion") as String?) ?: "3.3.1"
+    val prebidPin = (findProperty("prebidMobileVersion") as String?) ?: "3.4.0"
     fun intPart(value: String, label: String): Int =
         value.trim().toIntOrNull() ?: error("$label '$value' must be a non-negative integer")
     val adapterRevision = (findProperty("adapterRevision") as String?)?.let { intPart(it, "adapterRevision") } ?: 0

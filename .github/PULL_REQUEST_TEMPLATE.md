@@ -17,7 +17,7 @@ _Summarize how the change solves the problem. Call out anything non-obvious abou
 
 _Describe how you verified the change. Include the relevant configuration._
 
- - Prebid Mobile SDK version: [e.g. 3.3.1]
+ - Prebid Mobile SDK version: [e.g. 3.4.0]
  - Chartboost Monetization SDK version: [e.g. 9.14.0]
  - Ad format(s) exercised: [e.g. banner, interstitial, rewarded]
 

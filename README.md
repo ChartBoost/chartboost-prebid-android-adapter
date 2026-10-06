@@ -8,7 +8,7 @@ that Chartboost Mediation and MAX drive, plugged into Prebid.
 
 | Component                | Version |
 | ------------------------ | ------- |
-| Prebid Mobile SDK        | 3.3.1+ (tested through 3.4.x) |
+| Prebid Mobile SDK        | 3.4.0+ (see the [CHANGELOG](CHANGELOG.md) for the certified version) |
 | Chartboost Monetization SDK | 9.14.0+ |
 | Android API              | 21+     |
 | kotlinx-coroutines-android | present at runtime (ships transitively with the Chartboost Monetization SDK) |
@@ -46,7 +46,7 @@ Then in your app's `build.gradle`, add the adapter plus the SDKs it renders thro
 ```groovy
 implementation "com.chartboost:chartboost-prebid-adapter:309.14.0"
 implementation "com.chartboost:chartboost-sdk:9.14.0"
-implementation "org.prebid:prebid-mobile-sdk:3.3.1"
+implementation "org.prebid:prebid-mobile-sdk:3.4.0"
 ```
 
 The adapter uses Kotlin coroutines at runtime and expects `kotlinx-coroutines-android` on the app

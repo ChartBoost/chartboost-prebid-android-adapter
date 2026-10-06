@@ -9,5 +9,5 @@ All official releases can be found on this repository's [releases page](https://
 <!-- releases -->
 
 ### 309.14.0
-- This version of the adapter has been certified with Prebid Mobile SDK 3.3.1 and Chartboost Monetization SDK 9.14.0.
+- This version of the adapter has been certified with Prebid Mobile SDK 3.4.0 and Chartboost Monetization SDK 9.14.0.
 - Initial release.
