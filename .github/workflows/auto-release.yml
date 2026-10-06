@@ -6,8 +6,9 @@
 # pushed by GITHUB_TOKEN does not trigger another workflow (GitHub suppresses recursive triggers), so
 # release.yml would never fire. The PAT needs `contents: write` on this repo.
 #
-# The job targets the release-approval environment, which has a required reviewer configured in repo
-# settings, so tagging waits for that approval before it runs.
+# The job targets the release-approval environment so a required reviewer can gate tagging. That
+# environment is not set up yet, so GitHub creates it on first use with no reviewer and the job runs
+# without approval. Add the reviewer in repo settings to turn the gate on.
 name: auto-release
 
 on:
