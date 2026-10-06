@@ -17,7 +17,3 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
-    ignore:
-      # Dependabot cannot reach this private repo (git_dependencies_not_reachable), which fails every run
-      # for this ecosystem. loopme-secrets-scan.yml references it directly; bump it there by hand.
-      - dependency-name: "loopme/secrets"
