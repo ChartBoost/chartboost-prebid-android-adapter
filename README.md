@@ -110,10 +110,6 @@ routing fallback. All callbacks run on the main thread and take a `ChartboostAdF
 - `onAdDismissed(format)` — fullscreen only; banners never invoke it.
 - `onUserEarnedReward(format)` — fullscreen only; banners never invoke it.
 
-Prebid's own ad lifecycle has no terminal show-failed signal, so a fullscreen ad that loads but then fails
-at show time (e.g. it expired before `show()`) is logged but does not invoke `onAdFailed`; don't treat a
-missing display as a guaranteed failure callback.
-
 `ChartboostPrebidAdapter` also exposes three integration helpers:
 
 - `unregister()` — the counterpart to `register()`; a no-op when nothing is registered. Call it to tear
@@ -140,23 +136,6 @@ nothing else:
 Given a winning bid's negotiated width and height, this adapter selects the **largest of those sizes that
 fits entirely inside** the requested dimensions. A full-width slot of, say, 412x50 renders `STANDARD`
 320x50 within it, the same way a fixed size is fitted into an adaptive banner slot.
-
-**Bid with no declared size.** Prebid reads a missing width/height as 0x0, and some Chartboost demand
-omits width/height on banner bids. Rather than treat that as an automatic no-fill, the adapter falls
-back to the size configured on the ad unit itself — either `BannerParameters.adSizes` or the older
-deprecated size setters, matching the precedence Prebid Mobile uses when it builds the request. The
-fallback also applies when only one dimension is missing (e.g. 320x0), since that is just as unusable as
-0x0. If the ad unit offers more than one size, the response does not say which one the bid actually won,
-so the adapter picks the smallest by area and logs a warning naming the candidates, since the smallest is
-the only choice that cannot overflow a slot the publisher sized for something smaller. Sizes the
-Monetization SDK cannot render into are passed over first, so an ad unit offering both 320x50 and 50x320
-resolves to 320x50 rather than declining the bid. A bid that already carries a usable width and height is
-unaffected; the ad unit's configured size is never consulted for it.
-
-This substitution decides which `Banner.BannerSize` gets rendered. It does not rewrite the bid, so
-anything Prebid Mobile derives from the bid's own width and height, such as the `hb_size` targeting key,
-still reflects what the bidder sent. Reporting a real width and height on the bid remains a server-side
-concern.
 
 If nothing fits, the bid is declined through `DisplayViewListener.onAdFailed`. That is final, not a
 retry: Prebid Mobile's `DisplayView.createBannerAdView` picks a plugin once, via
