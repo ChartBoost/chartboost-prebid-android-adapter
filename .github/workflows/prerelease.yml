@@ -1,0 +1,60 @@
+# Publishes a private release candidate of the adapter AAR
+# (com.chartboost:chartboost-prebid-adapter:<version>-rcN) to the PRIVATE Artifactory repo
+# (private-chartboost-ads). Mirrors the Chartboost Mediation adapters' prerelease flow: push a
+# `prerelease/**` branch (or dispatch manually) to cut the next RC. The public repo is never touched here;
+# see release.yml for the tag-driven public release.
+#
+# scripts/get_rc_version.sh queries the private repo for the highest existing <version>-rcN and returns
+# N+1 (rc1 when none), so RCs auto-increment. CHARTBOOST_PREBID_IS_RELEASE stays "false", so the gradle
+# publish targets the private repo. -PADAPTER_VERSION is this adapter's equivalent of the mediation
+# adapters' VERSION_OVERRIDE.
+#
+# Required secrets (on the CI environment): JFROG_USER / JFROG_PASS with write access to
+# private-chartboost-ads.
+name: prerelease
+
+on:
+  push:
+    branches:
+      - 'prerelease/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prerelease
+  cancel-in-progress: false
+
+jobs:
+  prerelease:
+    runs-on: ubuntu-latest
+    environment: CI
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+    - name: Set up JDK
+      uses: ./.github/actions/setup-jdk
+
+    - name: Compute release-candidate version
+      id: rc
+      env:
+        JFROG_USER: ${{ secrets.JFROG_USER }}
+        JFROG_PASS: ${{ secrets.JFROG_PASS }}
+      # Assign on its own line so a script failure aborts the step under `set -e`. Inlining it in the echo
+      # would swallow the failure (echo returns 0) and silently publish the base version instead of an RC.
+      run: |
+        version="$(./scripts/get_rc_version.sh)"
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+    - name: Test + assemble + publish the release candidate to the private repo
+      env:
+        JFROG_USER: ${{ secrets.JFROG_USER }}
+        JFROG_PASS: ${{ secrets.JFROG_PASS }}
+        # Private RC publish: the gradle config treats anything other than "true" as a private publish.
+        CHARTBOOST_PREBID_IS_RELEASE: 'false'
+        VERSION: ${{ steps.rc.outputs.version }}
+      # `ci` runs the unit tests + assembleRelease + verifyPublishedVersion before artifactoryPublish (wired
+      # in the module build), so an RC can never publish untested code.
+      run: ./gradlew ci :ChartboostPrebidPlugin:artifactoryPublish "-PADAPTER_VERSION=${VERSION}"

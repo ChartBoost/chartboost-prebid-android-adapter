@@ -1,0 +1,40 @@
+name: ci-tests
+
+on:
+  # Trigger on pull requests that target the following branches
+  pull_request:
+    branches:
+      - 'main'
+      - 'prerelease/**'
+  # Also run on pushes to main, so a direct push is verified the same way a PR is.
+  push:
+    branches:
+      - 'main'
+  # Manual trigger from the Github Actions tab
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+    - name: Test the release scripts
+      run: ./scripts/verify_on_main_test.sh
+
+    - name: Set up JDK
+      uses: ./.github/actions/setup-jdk
+
+    # Aggregate entry point mirroring the mediation adapters' `./gradlew ci`: unit tests + release assembly
+    # + coordinate/binary version-agreement check.
+    - name: CI (tests, assemble, verify version)
+      run: ./gradlew ci
+
+    - name: Verify the RC version round-trips through the POM and BuildConfig
+      run: |
+        base="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
+        ./gradlew :ChartboostPrebidPlugin:verifyPublishedVersion "-PADAPTER_VERSION=${base}-rc1"

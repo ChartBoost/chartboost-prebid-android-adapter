@@ -1,0 +1,31 @@
+/*
+ * Copyright (c) 2026 Chartboost, Inc.
+ *
+ * Licensed under the MIT License.
+ */
+
+package com.chartboost.prebid.fakes
+
+import io.mockk.every
+import io.mockk.mockk
+import org.prebid.mobile.rendering.bidding.data.bid.Bid
+import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
+
+/** Builder for a winning [Bid]; Bid has no public constructor, so it is mocked. */
+internal fun fakeBid(
+    adm: String? = "<chartboost-adm>",
+    width: Int = 320,
+    height: Int = 50,
+): Bid {
+    val bid = mockk<Bid>(relaxed = true)
+    every { bid.adm } returns adm
+    every { bid.width } returns width
+    every { bid.height } returns height
+    return bid
+}
+
+internal fun fakeBidResponse(bid: Bid? = fakeBid()): BidResponse {
+    val response = mockk<BidResponse>(relaxed = true)
+    every { response.winningBid } returns bid
+    return response
+}

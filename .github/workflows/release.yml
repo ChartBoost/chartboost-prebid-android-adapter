@@ -1,0 +1,96 @@
+# Publishes the PUBLIC release of the adapter AAR (com.chartboost:chartboost-prebid-adapter:<version>) to
+# the public Artifactory repo (chartboost-ads) and cuts a GitHub Release with the AAR attached. Mirrors the
+# Chartboost Mediation adapters' release flow: pushing a `v<version>` tag IS the release.
+#
+# There is no reviewer gate here (matching the mediation adapters), so public-publish safety rests on tag
+# discipline: v* tags are the only path in these workflows that publishes to the public repo. A tag ruleset
+# lets only admins push one, but auto-release.yml also pushes them with an admin PAT, so this job refuses a
+# tag whose commit is not on main. That stops mistakes. A tag run uses the tagged commit's own workflow
+# file, so only the environment rules in repo settings stop a writer on purpose.
+#
+# The tag must equal the computed adapter version (v<printAdapterVersion>), so the published coordinate,
+# the BuildConfig.ADAPTER_VERSION the Prebid Server echoes back, and the git tag all agree by construction.
+#
+# Required secrets (on the CI environment): JFROG_USER / JFROG_PASS with write access to chartboost-ads.
+name: release
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+# contents: write is needed to create the GitHub Release.
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    environment: CI
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        # Full history, so the next step can see origin/main.
+        fetch-depth: 0
+
+    - name: Verify the tagged commit is on main
+      run: ./scripts/verify_on_main.sh
+
+    - name: Set up JDK
+      uses: ./.github/actions/setup-jdk
+
+    - name: Verify the tag matches the computed adapter version
+      # The version is computed from the SDK pins, not stored, and the Prebid Server echoes it back byte for
+      # byte. Reject a tag that does not equal the computed version, so a public release can never advertise
+      # a version the server echo cannot reproduce. tail -n1 guards against stray Gradle daemon output.
+      run: |
+        base="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
+        tag="${GITHUB_REF_NAME#v}"
+        if [ "${tag}" != "${base}" ]; then
+          echo "::error::tag '${GITHUB_REF_NAME}' does not match the computed version 'v${base}'. Bump the SDK pins / adapterRevision, or tag v${base}."
+          exit 1
+        fi
+
+    - name: Slice this version's changelog section into the release body
+      # ncipollo defaults body, bodyFile and generateReleaseNotes to empty/false, so without this the
+      # Release page shows a version and an AAR with no notes. This runs before the publish step because a
+      # failure here must never strand an already-public AAR with no Release. The file is always created,
+      # empty when the section is missing, because ncipollo reads bodyFile with readFileSync and a missing
+      # path fails before the Release is created: shipping the artifact matters more than the notes.
+      env:
+        NOTES: ${{ runner.temp }}/release-notes.md
+      run: |
+        version="${GITHUB_REF_NAME#v}"
+        : > "${NOTES}"
+        if [ -f CHANGELOG.md ] && grep -qxF "### ${version}" CHANGELOG.md; then
+          awk -v heading="### ${version}" '
+            $0 == heading { capture = 1; next }
+            capture && /^#/ { exit }
+            capture { print }
+          ' CHANGELOG.md > "${NOTES}"
+        else
+          echo "::warning::CHANGELOG.md has no '### ${version}' section, so the release body will be empty."
+        fi
+        echo "release body:"; cat "${NOTES}"
+
+    - name: Test + assemble + publish the release to the public repo
+      env:
+        JFROG_USER: ${{ secrets.JFROG_USER }}
+        JFROG_PASS: ${{ secrets.JFROG_PASS }}
+        # Public release: only "true" targets the public chartboost-ads repo.
+        CHARTBOOST_PREBID_IS_RELEASE: 'true'
+      # `ci` runs the unit tests + assembleRelease + verifyPublishedVersion before artifactoryPublish, so a
+      # tagged public release can never publish untested code. The computed version equals the tag (asserted
+      # above), so no -PADAPTER_VERSION pin is needed.
+      run: ./gradlew ci :ChartboostPrebidPlugin:artifactoryPublish
+
+    - name: Create the GitHub Release
+      uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1.21.0
+      with:
+        artifacts: ChartboostPrebidPlugin/build/outputs/aar/*.aar
+        bodyFile: ${{ runner.temp }}/release-notes.md

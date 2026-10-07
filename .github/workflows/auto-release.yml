@@ -1,0 +1,95 @@
+# Creates and pushes the v<version> release tag when a release-prep PR (head branch release/<version>) is
+# merged to main, which then triggers release.yml. Mirrors the Chartboost Mediation adapters' auto-release
+# step, but self-contained (no central actions repo): the tag is pushed from within this repo.
+#
+# The tag MUST be pushed with a PAT (secrets.RELEASE_PAT), not the default GITHUB_TOKEN, because a tag
+# pushed by GITHUB_TOKEN does not trigger another workflow (GitHub suppresses recursive triggers), so
+# release.yml would never fire. The PAT needs `contents: write` on this repo.
+#
+# The job targets the release-approval environment so a required reviewer can gate tagging. That
+# environment is not set up yet, so GitHub creates it on first use with no reviewer and the job runs
+# without approval. Add the reviewer in repo settings to turn the gate on.
+name: auto-release
+
+on:
+  pull_request:
+    types: [closed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to tag (e.g. 309.14.0). Leave empty to use the computed version.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  auto-release:
+    # Only on a merged release-prep PR (head branch release/<version>, opened from this repo, not a fork) or
+    # a manual dispatch from main. A plain PR close without merge is ignored. A dispatch from any other branch
+    # is ignored too, so a release can't be tagged by mistake from unmerged code. This check lives in the
+    # workflow file, which a branch can edit, so only the release-approval environment rules stop a writer
+    # on purpose.
+    if: >-
+      (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main') ||
+      (github.event.pull_request.merged == true &&
+       startsWith(github.event.pull_request.head.ref, 'release/') &&
+       github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    environment: release-approval
+    concurrency:
+      group: auto-release
+      cancel-in-progress: false
+
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      with:
+        # Check out with the PAT so the tag push below is attributed to it and triggers release.yml.
+        token: ${{ secrets.RELEASE_PAT }}
+        # A merged PR's default ref is the PR merge ref, not main. Tag the commit the merge put on main.
+        ref: ${{ github.event.pull_request.merge_commit_sha || github.sha }}
+        fetch-depth: 0
+
+    - name: Verify the commit is on main
+      run: ./scripts/verify_on_main.sh
+
+    - name: Set up JDK
+      uses: ./.github/actions/setup-jdk
+
+    - name: Resolve and validate the release version
+      id: ver
+      env:
+        INPUT_VERSION: ${{ github.event.inputs.version }}
+        HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      run: |
+        if [ -n "${INPUT_VERSION}" ]; then
+          version="${INPUT_VERSION#v}"
+        elif [ -n "${HEAD_REF}" ]; then
+          version="${HEAD_REF#release/}"
+        else
+          version="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
+        fi
+        # Canonical 3-segment X.Y.Z only. RCs are private and never tagged, so no -rc tail here.
+        if ! printf '%s' "${version}" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+$'; then
+          echo "::error::resolved version '${version}' is not a 3-segment X.Y.Z"; exit 1
+        fi
+        # Cross-check against the computed version so the tag can never drift from what the build produces.
+        base="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
+        if [ "${version}" != "${base}" ]; then
+          echo "::error::version '${version}' does not match the computed version '${base}'"; exit 1
+        fi
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+    - name: Create and push the tag
+      env:
+        VERSION: ${{ steps.ver.outputs.version }}
+      run: |
+        if git ls-remote --exit-code --tags origin "v${VERSION}" >/dev/null 2>&1; then
+          echo "::error::tag v${VERSION} already exists"; exit 1
+        fi
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git tag -a "v${VERSION}" -m "Release v${VERSION}"
+        git push origin "v${VERSION}"

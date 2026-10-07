@@ -1,0 +1,119 @@
+# Opens a release-prep PR that bumps the version inputs and updates the changelog. Mirrors the Chartboost
+# Mediation adapters' "create release branch" automation, adapted for this adapter's COMPUTED version:
+# instead of rewriting a literal versionName, it edits the version inputs in gradle.properties
+# (chartboostSdkVersion / prebidMobileVersion / adapterRevision), recomputes the version, prepends a
+# CHANGELOG entry, and opens a PR on a release/<version> branch. Merging that PR triggers
+# auto-release.yml -> tag -> release.yml.
+#
+# Two things are left to the PR author: README minimum-requirement bumps, since those are "N+" minimums
+# rather than exact per-release values, and CHANGELOG bullets for behaviour changes, since the generated
+# entry records certification only. The PR body prompts for both.
+name: create-release-version
+
+on:
+  workflow_dispatch:
+    inputs:
+      chartboostSdkVersion:
+        description: 'Chartboost Monetization SDK version (blank keeps current)'
+        required: false
+        type: string
+      prebidMobileVersion:
+        description: 'Prebid Mobile SDK version (blank keeps current)'
+        required: false
+        type: string
+      adapterRevision:
+        description: 'Adapter revision (blank keeps current)'
+        required: false
+        type: string
+
+# The only write this workflow performs (opening the release-prep PR) goes through secrets.RELEASE_PAT
+# explicitly, not the default GITHUB_TOKEN, so the default token only needs read access to check out.
+permissions:
+  contents: read
+
+jobs:
+  create-release-version:
+    runs-on: ubuntu-latest
+    # RELEASE_PAT belongs in this environment, not in repo secrets, so a run from a branch can't read it.
+    environment: release-approval
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+
+    - name: Set up JDK
+      uses: ./.github/actions/setup-jdk
+
+    - name: Apply version inputs to gradle.properties
+      env:
+        CB: ${{ github.event.inputs.chartboostSdkVersion }}
+        PB: ${{ github.event.inputs.prebidMobileVersion }}
+        REV: ${{ github.event.inputs.adapterRevision }}
+      # Validate the dispatch inputs before editing, so a fat-fingered value fails here rather than
+      # silently corrupting gradle.properties (an unescaped `&` is sed's whole-match backreference). GNU sed
+      # on the ubuntu runner then edits in place with no backup file.
+      run: |
+        if [ -n "${CB}" ] && ! printf '%s' "${CB}" | grep -qE '^[0-9]+(\.[0-9]+)+$'; then
+          echo "::error::chartboostSdkVersion '${CB}' must be dotted numeric (e.g. 9.14.0)"; exit 1
+        fi
+        if [ -n "${PB}" ] && ! printf '%s' "${PB}" | grep -qE '^[0-9]+(\.[0-9]+)+$'; then
+          echo "::error::prebidMobileVersion '${PB}' must be dotted numeric (e.g. 3.4.0)"; exit 1
+        fi
+        if [ -n "${REV}" ] && ! printf '%s' "${REV}" | grep -qE '^[0-9]+$'; then
+          echo "::error::adapterRevision '${REV}' must be a non-negative integer"; exit 1
+        fi
+        [ -n "${CB}" ] && sed -i -E "s/^chartboostSdkVersion=.*/chartboostSdkVersion=${CB}/" gradle.properties
+        [ -n "${PB}" ] && sed -i -E "s/^prebidMobileVersion=.*/prebidMobileVersion=${PB}/" gradle.properties
+        [ -n "${REV}" ] && sed -i -E "s/^adapterRevision=.*/adapterRevision=${REV}/" gradle.properties
+        echo "gradle.properties after bump:"; grep -E '^(chartboostSdkVersion|prebidMobileVersion|adapterRevision)=' gradle.properties
+
+    - name: Compute the resulting version
+      id: ver
+      # Assign on its own line so a Gradle failure aborts the step under `set -e`. Inlining it in the echo
+      # would swallow the failure (echo returns 0) and open a release PR with an empty version.
+      run: |
+        version="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
+        echo "version=${version}" >> "$GITHUB_OUTPUT"
+
+    - name: Prepend the CHANGELOG entry
+      env:
+        VERSION: ${{ steps.ver.outputs.version }}
+      # Insert a new "### <version>" block right after the <!-- releases --> anchor (newest first). Read the
+      # resolved SDK versions back from gradle.properties so the entry reflects the post-bump values.
+      run: |
+        CB="$(grep -E '^chartboostSdkVersion=' gradle.properties | cut -d= -f2)"
+        PB="$(grep -E '^prebidMobileVersion=' gradle.properties | cut -d= -f2)"
+        # Wording and the heading-then-bullet shape (no blank line between the two) copy the entries already
+        # in CHANGELOG.md, which in turn copy every Chartboost Mediation adapter changelog. The SDK order is
+        # this repo's own, since no other adapter certifies against two SDKs at once. The sentence is built
+        # here rather than inside awk so the awk block stays purely structural.
+        CERTIFIED_BULLET="- This version of the adapter has been certified with Prebid Mobile SDK ${PB} and Chartboost Monetization SDK ${CB}."
+        awk -v v="$VERSION" -v bullet="$CERTIFIED_BULLET" '
+          { print }
+          /<!-- releases -->/ && !done {
+            print "";
+            print "### " v;
+            print bullet;
+            done = 1
+          }
+        ' CHANGELOG.md > CHANGELOG.md.new
+        mv CHANGELOG.md.new CHANGELOG.md
+        echo "CHANGELOG head:"; head -n 20 CHANGELOG.md
+
+    - name: Open the release-prep PR
+      uses: peter-evans/create-pull-request@5f6978faf089d4d20b00c7766989d076bb2fc7f1 # v8.1.1
+      with:
+        # Use the PAT, not the default GITHUB_TOKEN, so ci-tests.yml fires on the opened PR. GitHub
+        # suppresses workflow triggers for events caused by GITHUB_TOKEN, which would leave the release-prep
+        # PR mergeable with no CI having run.
+        token: ${{ secrets.RELEASE_PAT }}
+        branch: release/${{ steps.ver.outputs.version }}
+        base: main
+        title: 'release: ${{ steps.ver.outputs.version }}'
+        commit-message: 'release: ${{ steps.ver.outputs.version }}'
+        body: |
+          Release prep for ${{ steps.ver.outputs.version }}.
+
+          Before merging, add a CHANGELOG bullet for every behaviour change in this release; the generated
+          entry records certification only. Update the README minimum requirements too if they changed.
+
+          Merging this PR pushes the `v${{ steps.ver.outputs.version }}` tag (auto-release.yml) and publishes
+          the public release (release.yml).
