@@ -5,12 +5,20 @@
 # CHANGELOG entry, and opens a PR on a release/<version> branch. Merging that PR triggers
 # auto-release.yml -> tag -> release.yml.
 #
+# The helium-android Prebid automation also triggers it with a `create-release-branch` repository dispatch
+# when AIM reports a new Prebid Mobile minor or major release. The payload carries the Prebid Mobile version
+# (partner_version) and the adapter version it expects (adapter_version), the same payload the Mediation
+# adapters receive; the revision comes from the expected version, and the run fails if the computed version
+# differs from it.
+#
 # Two things are left to the PR author: README minimum-requirement bumps, since those are "N+" minimums
 # rather than exact per-release values, and CHANGELOG bullets for behaviour changes, since the generated
 # entry records certification only. The PR body prompts for both.
 name: create-release-version
 
 on:
+  repository_dispatch:
+    types: [create-release-branch]
   workflow_dispatch:
     inputs:
       chartboostSdkVersion:
@@ -45,12 +53,17 @@ jobs:
     - name: Apply version inputs to gradle.properties
       env:
         CB: ${{ github.event.inputs.chartboostSdkVersion }}
-        PB: ${{ github.event.inputs.prebidMobileVersion }}
+        PB: ${{ github.event.inputs.prebidMobileVersion || github.event.client_payload.partner_version }}
         REV: ${{ github.event.inputs.adapterRevision }}
+        EXPECTED_VERSION: ${{ github.event.client_payload.adapter_version }}
       # Validate the dispatch inputs before editing, so a fat-fingered value fails here rather than
       # silently corrupting gradle.properties (an unescaped `&` is sed's whole-match backreference). GNU sed
       # on the ubuntu runner then edits in place with no backup file.
       run: |
+        # A dispatch names the adapter version it expects, so its last segment is the revision.
+        if [ -z "${REV}" ] && [ -n "${EXPECTED_VERSION}" ]; then
+          REV="${EXPECTED_VERSION##*.}"
+        fi
         if [ -n "${CB}" ] && ! printf '%s' "${CB}" | grep -qE '^[0-9]+(\.[0-9]+)+$'; then
           echo "::error::chartboostSdkVersion '${CB}' must be dotted numeric (e.g. 9.14.0)"; exit 1
         fi
@@ -69,8 +82,13 @@ jobs:
       id: ver
       # Assign on its own line so a Gradle failure aborts the step under `set -e`. Inlining it in the echo
       # would swallow the failure (echo returns 0) and open a release PR with an empty version.
+      env:
+        EXPECTED_VERSION: ${{ github.event.client_payload.adapter_version }}
       run: |
         version="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
+        if [ -n "${EXPECTED_VERSION}" ] && [ "${version}" != "${EXPECTED_VERSION}" ]; then
+          echo "::error::the bump computes ${version}, but the dispatch expected ${EXPECTED_VERSION}"; exit 1
+        fi
         echo "version=${version}" >> "$GITHUB_OUTPUT"
 
     - name: Prepend the CHANGELOG entry
