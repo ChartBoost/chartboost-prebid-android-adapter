@@ -5,12 +5,17 @@
 # CHANGELOG entry, and opens a PR on a release/<version> branch. Merging that PR triggers
 # auto-release.yml -> tag -> release.yml.
 #
+# The helium-android Prebid automation also triggers it with the Mediation adapters' `create-release-branch`
+# repository dispatch when AIM reports a new Prebid Mobile minor or major release.
+#
 # Two things are left to the PR author: README minimum-requirement bumps, since those are "N+" minimums
 # rather than exact per-release values, and CHANGELOG bullets for behaviour changes, since the generated
 # entry records certification only. The PR body prompts for both.
 name: create-release-version
 
 on:
+  repository_dispatch:
+    types: [create-release-branch]
   workflow_dispatch:
     inputs:
       chartboostSdkVersion:
@@ -36,6 +41,10 @@ jobs:
     runs-on: ubuntu-latest
     # RELEASE_PAT belongs in this environment, not in repo secrets, so a run from a branch can't read it.
     environment: release-approval
+    env:
+      # A dispatch names the adapter version it expects. Its last segment is the revision, and the computed
+      # version must equal it.
+      EXPECTED_VERSION: ${{ github.event.client_payload.adapter_version }}
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
@@ -45,19 +54,23 @@ jobs:
     - name: Apply version inputs to gradle.properties
       env:
         CB: ${{ github.event.inputs.chartboostSdkVersion }}
-        PB: ${{ github.event.inputs.prebidMobileVersion }}
+        PB: ${{ github.event.inputs.prebidMobileVersion || github.event.client_payload.partner_version }}
         REV: ${{ github.event.inputs.adapterRevision }}
       # Validate the dispatch inputs before editing, so a fat-fingered value fails here rather than
       # silently corrupting gradle.properties (an unescaped `&` is sed's whole-match backreference). GNU sed
       # on the ubuntu runner then edits in place with no backup file.
       run: |
-        if [ -n "${CB}" ] && ! printf '%s' "${CB}" | grep -qE '^[0-9]+(\.[0-9]+)+$'; then
+        if [ -z "${REV}" ] && [ -n "${EXPECTED_VERSION}" ]; then
+          REV="${EXPECTED_VERSION##*.}"
+        fi
+        # [[ =~ ]] matches the whole value, so a multi-line dispatch payload can't slip a valid first line past it.
+        if [ -n "${CB}" ] && [[ ! "${CB}" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
           echo "::error::chartboostSdkVersion '${CB}' must be dotted numeric (e.g. 9.14.0)"; exit 1
         fi
-        if [ -n "${PB}" ] && ! printf '%s' "${PB}" | grep -qE '^[0-9]+(\.[0-9]+)+$'; then
+        if [ -n "${PB}" ] && [[ ! "${PB}" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
           echo "::error::prebidMobileVersion '${PB}' must be dotted numeric (e.g. 3.4.0)"; exit 1
         fi
-        if [ -n "${REV}" ] && ! printf '%s' "${REV}" | grep -qE '^[0-9]+$'; then
+        if [ -n "${REV}" ] && [[ ! "${REV}" =~ ^[0-9]+$ ]]; then
           echo "::error::adapterRevision '${REV}' must be a non-negative integer"; exit 1
         fi
         [ -n "${CB}" ] && sed -i -E "s/^chartboostSdkVersion=.*/chartboostSdkVersion=${CB}/" gradle.properties
@@ -71,6 +84,9 @@ jobs:
       # would swallow the failure (echo returns 0) and open a release PR with an empty version.
       run: |
         version="$(./gradlew -q printAdapterVersion | tail -n1 | tr -d '[:space:]')"
+        if [ -n "${EXPECTED_VERSION}" ] && [ "${version}" != "${EXPECTED_VERSION}" ]; then
+          echo "::error::the bump computes ${version}, but the dispatch expected ${EXPECTED_VERSION}"; exit 1
+        fi
         echo "version=${version}" >> "$GITHUB_OUTPUT"
 
     - name: Prepend the CHANGELOG entry
