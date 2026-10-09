@@ -373,8 +373,8 @@ class ChartboostBannerAdapterTest {
 
     @Test
     fun `expiry never reports failure`() {
-        // Banner expiry is a pure no-op by design (unlike the fullscreen path, which surfaces pre-ready
-        // expiry as a reload signal). Exercise it before any load so loadedLatch is unset: wiring expiry to
+        // Banner expiry is a pure no-op by design (unlike the fullscreen path, which surfaces expiry as
+        // a reload signal). Exercise it before any load so loadedLatch is unset: wiring expiry to
         // reportFailed would then actually fire onAdFailed and fail this test. Testing after load would be
         // masked by reportFailed's !loadedLatch.hasFired guard.
         val adapter = adapter()

@@ -53,6 +53,15 @@ class ChartboostFullscreenAdapterTest {
         context, listener, factory, MainThreadExecutor { it() }, eventListener = eventListener,
     )
 
+    /** An adapter that has loaded and reported ready for display. */
+    private fun readyAdapter(
+        eventListener: ChartboostPrebidEventListener? = null,
+        rewarded: Boolean = false,
+    ) = adapter(eventListener).also {
+        it.loadAd(config(rewarded), fakeBidResponse())
+        it.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
+    }
+
     // ExpirationReason lives in the SDK's internal package and cannot be named here; a relaxed mock
     // supplies the reason the error message interpolates.
     private fun expirationEvent() = mockk<ExpirationEvent>(relaxed = true)
@@ -237,9 +246,47 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
-    fun `expiry after ready does not report failed to load because AD_LOADED was already sent`() {
-        val adapter = adapter().also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null) // reports ready for display
+    fun `expiry after ready reports failed to load so the ad unit can reload`() {
+        val adapter = readyAdapter()
+        adapter.onAdExpired(expirationEvent())
+        verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
+    }
+
+    @Test
+    fun `expiry after ready notifies the event listener with the ad's format`() {
+        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
+        val adapter = readyAdapter(eventListener = events, rewarded = true)
+        adapter.onAdExpired(expirationEvent())
+        verify { events.onAdFailed(ChartboostAdFormat.REWARDED, any()) }
+    }
+
+    @Test
+    fun `expiry after ready clears the cached ad`() {
+        val adapter = readyAdapter()
+        adapter.onAdExpired(expirationEvent())
+        verify { factory.interstitial.clearCache() }
+    }
+
+    @Test
+    fun `show after expiry does not reach the SDK`() {
+        val adapter = readyAdapter()
+        adapter.onAdExpired(expirationEvent())
+        adapter.show()
+        verify(exactly = 0) { factory.interstitial.show() }
+    }
+
+    @Test
+    fun `a second expiry after ready reports failed to load only once`() {
+        val adapter = readyAdapter()
+        adapter.onAdExpired(expirationEvent())
+        adapter.onAdExpired(expirationEvent())
+        verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
+    }
+
+    @Test
+    fun `expiry after destroy reports nothing`() {
+        val adapter = readyAdapter()
+        adapter.destroy()
         adapter.onAdExpired(expirationEvent())
         verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
     }
