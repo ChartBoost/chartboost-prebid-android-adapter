@@ -15,9 +15,10 @@ import org.prebid.mobile.api.exceptions.AdException
  *
  * [onAdDismissed] and [onUserEarnedReward] are fullscreen-only; banner ads never invoke them.
  *
- * These mirror Prebid's own lifecycle, which has no terminal show-failed signal: a fullscreen ad that
- * loads and then fails at show time, e.g. by expiring before `show()`, is logged but does not invoke
- * [onAdFailed], so a missing display is not a guaranteed failure callback.
+ * A fullscreen ad that loads and then expires before `show()`, or fails a `show()` that uses it up, invokes
+ * [onAdFailed]. Prebid's own ad unit listener also reports the failure, so the publisher can load a new ad.
+ * A show failure that leaves the ad cached, such as no usable Activity, is only logged, so `show()` can be
+ * called again.
  */
 public interface ChartboostPrebidEventListener {
     public fun onAdLoaded(format: ChartboostAdFormat) {}

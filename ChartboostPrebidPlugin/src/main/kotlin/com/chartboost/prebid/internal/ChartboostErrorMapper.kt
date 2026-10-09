@@ -14,8 +14,7 @@ import org.prebid.mobile.api.exceptions.AdException
 /**
  * Maps a Chartboost [CacheError] to a Prebid [AdException], keeping the raw Chartboost code in the
  * message, since `AdException(type, message)` is the only constructor. An unknown or future code still
- * carries its raw value rather than collapsing into a blanket internal error. Show errors are not mapped:
- * Prebid has no terminal show-failed signal, so they are logged at the call site instead.
+ * carries its raw value rather than collapsing into a blanket internal error.
  */
 internal object ChartboostErrorMapper {
 
@@ -41,6 +40,9 @@ internal object ChartboostErrorMapper {
         }
         return "$prefix [ShowError ${code.name}(${code.errorCode})]"
     }
+
+    /** A failed show used up the cached ad; the publisher should reload. */
+    fun showFailed(error: ShowError): AdException = adException(mapShow(error))
 
     fun admInvalid(): AdException = adException("Empty or invalid ADM for a Chartboost-flagged bid")
 

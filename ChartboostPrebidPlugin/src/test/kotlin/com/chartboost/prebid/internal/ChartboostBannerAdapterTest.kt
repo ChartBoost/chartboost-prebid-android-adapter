@@ -373,8 +373,8 @@ class ChartboostBannerAdapterTest {
 
     @Test
     fun `expiry never reports failure`() {
-        // Banner expiry is a pure no-op by design (unlike the fullscreen path, which surfaces pre-ready
-        // expiry as a reload signal). Exercise it before any load so loadedLatch is unset: wiring expiry to
+        // Banner expiry is a pure no-op by design (unlike the fullscreen path, which surfaces expiry as
+        // a reload signal). Exercise it before any load so loadedLatch is unset: wiring expiry to
         // reportFailed would then actually fire onAdFailed and fail this test. Testing after load would be
         // masked by reportFailed's !loadedLatch.hasFired guard.
         val adapter = adapter()
@@ -384,9 +384,8 @@ class ChartboostBannerAdapterTest {
 
     @Test
     fun `show failure after load logs only and never re-signals onAdFailed`() {
-        // Mirrors the fullscreen adapter's equivalent case: Prebid has no terminal show-failed signal, so a
-        // ShowError arriving after onAdLoaded already reported success must be logged only, never re-signaled
-        // as onAdFailed.
+        // Prebid has no terminal show-failed signal for banners, so a ShowError arriving after onAdLoaded
+        // already reported success must be logged only, never re-signaled as onAdFailed.
         val adapter = adapter()
         adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
         adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.NO_CACHED_AD))

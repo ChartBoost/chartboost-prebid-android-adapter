@@ -115,7 +115,10 @@ internal class ChartboostFullscreenAdapter(
         // below are deliberately NOT gated: clearCache() does not tear down a showing ad.
         if (destroyed.hasFired) return@execute
         if (error != null) {
-            reportLoadFailed(ChartboostErrorMapper.map(error))
+            // Mapping logs the error. A cache error after ready-for-display must not fire FAILED-after-LOADED:
+            // the loaded ad is still usable, unlike an expired one (see onAdExpired).
+            val failure = ChartboostErrorMapper.map(error)
+            if (!readyLatch.hasFired) reportLoadFailed(failure)
         } else if (!failedLatch.hasFired && readyLatch.fire()) {
             // Suppress a late success after a reported failure, so the publisher never sees READY
             // following FAILED for one load.
@@ -130,8 +133,7 @@ internal class ChartboostFullscreenAdapter(
 
     override fun onAdShown(event: ShowEvent, error: ShowError?) = mainThread.execute {
         if (error != null) {
-            // No impression fires on a failed show, which is correct billing.
-            PluginLog.w("fullscreen show failed: ${ChartboostErrorMapper.mapShow(error)}")
+            reportShowFailed(error)
         } else if (displayedLatch.fire()) {
             listener.onInterstitialDisplayed()
             eventListener?.onAdDisplayed(adFormat)
@@ -159,26 +161,51 @@ internal class ChartboostFullscreenAdapter(
     }
 
     override fun onAdExpired(event: ExpirationEvent) = mainThread.execute {
-        if (destroyed.hasFired) return@execute
-        // Surface expiry as a load failure only before the ad was reported ready: afterwards Prebid has
-        // already notified AD_LOADED, so failing here would violate its post-load contract and a later
-        // show() would be dropped. Post-ready expiry surfaces at show() through ShowError.AD_EXPIRED,
-        // which onAdShown logs. Clear the dead cache now, since destroy() may never run for an ad that
-        // never showed.
-        if (!readyLatch.hasFired) {
-            ad?.clearCache()
-            ad = null
-            reportLoadFailed(ChartboostErrorMapper.adExpired(event))
+        // The SDK expires only a cached ad that has not started showing, so this can follow ready.
+        if (destroyed.hasFired || failedLatch.hasFired) return@execute
+        reportAdGone(ChartboostErrorMapper.adExpired(event))
+    }
+
+    /**
+     * No impression fires on a failed show, which is correct billing. The ad survives when the SDK rejects
+     * the show up front (e.g. no usable Activity), so show() can be retried, or when AD_ALREADY_VISIBLE says
+     * an earlier show() of it is still opening. Any other failure uses it up.
+     */
+    private fun reportShowFailed(error: ShowError) {
+        val ad = this.ad
+        if (ad == null || displayedLatch.hasFired || error.code == ShowError.Code.AD_ALREADY_VISIBLE ||
+            isStillCached(ad)
+        ) {
+            PluginLog.w("fullscreen show failed: ${ChartboostErrorMapper.mapShow(error)}")
+            return
         }
+        reportAdGone(ChartboostErrorMapper.showFailed(error))
+    }
+
+    /**
+     * isCached() is deprecated for publishers, but it is the only read of the SDK load slot that a failed show
+     * empties. The SDK is compileOnly, so a newer publisher SDK may no longer have it: treat the ad as cached
+     * then, which keeps the plain log-only handling instead of crashing.
+     */
+    @Suppress("DEPRECATION")
+    private fun isStillCached(ad: Ad): Boolean = runCatching { ad.isCached() }.getOrDefault(true)
+
+    /**
+     * The SDK no longer has the ad, after an expiry or a failed show. Prebid has no hook for either, so report
+     * a load failure even after ready: it resets the ad unit so the publisher can reload, instead of leaving a
+     * dead unit that still reports loaded. Clear the cache now, since destroy() may never run for an ad that
+     * never showed.
+     */
+    private fun reportAdGone(error: AdException) {
+        ad?.clearCache()
+        ad = null
+        reportLoadFailed(error)
     }
 
     /** Reports a load failure to the Prebid listener and the optional plugin listener, at most once. */
     private fun reportLoadFailed(error: AdException) {
-        // Mirrors onAdLoaded's own !failedLatch.hasFired check: a cache error arriving after
-        // ready-for-display must not fire FAILED-after-LOADED.
-        if (!readyLatch.hasFired && failedLatch.fire()) {
-            listener.onInterstitialFailedToLoad(error)
-            eventListener?.onAdFailed(adFormat, error)
-        }
+        if (!failedLatch.fire()) return
+        listener.onInterstitialFailedToLoad(error)
+        eventListener?.onAdFailed(adFormat, error)
     }
 }
