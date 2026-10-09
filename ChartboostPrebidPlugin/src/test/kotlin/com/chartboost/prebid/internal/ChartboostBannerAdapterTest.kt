@@ -384,9 +384,8 @@ class ChartboostBannerAdapterTest {
 
     @Test
     fun `show failure after load logs only and never re-signals onAdFailed`() {
-        // Mirrors the fullscreen adapter's equivalent case: Prebid has no terminal show-failed signal, so a
-        // ShowError arriving after onAdLoaded already reported success must be logged only, never re-signaled
-        // as onAdFailed.
+        // Prebid has no terminal show-failed signal for banners, so a ShowError arriving after onAdLoaded
+        // already reported success must be logged only, never re-signaled as onAdFailed.
         val adapter = adapter()
         adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
         adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.NO_CACHED_AD))
