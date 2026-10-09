@@ -107,8 +107,8 @@ routing fallback. All callbacks run on the main thread and take a `ChartboostAdF
   `REWARDED`, and on the first recorded impression for `BANNER` (banners have no separate show signal).
 - `onAdClicked(format)`
 - `onAdFailed(format, error)` — `error` is Prebid's `AdException`. Also fires when a loaded `INTERSTITIAL` /
-  `REWARDED` ad expires before `show()`. Prebid's own ad unit listener also reports the failure, so the
-  publisher can load a new ad.
+  `REWARDED` ad expires before `show()`, or fails a `show()` that uses it up. Prebid's own ad unit listener
+  also reports the failure, so the publisher can load a new ad.
 - `onAdDismissed(format)` — fullscreen only; banners never invoke it.
 - `onUserEarnedReward(format)` — fullscreen only; banners never invoke it.
 
