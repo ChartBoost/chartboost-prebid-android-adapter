@@ -27,8 +27,6 @@ import org.prebid.mobile.api.rendering.PrebidMobileInterstitialControllerInterfa
 import org.prebid.mobile.configuration.AdUnitConfiguration
 import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerListener
-import org.prebid.mobile.rendering.interstitial.rewarded.RewardManager
-import org.prebid.mobile.rendering.interstitial.rewarded.RewardedExt
 
 /**
  * Interstitial and rewarded controller, plus the bridge from Chartboost callbacks to
@@ -57,10 +55,6 @@ internal class ChartboostFullscreenAdapter(
     private var ad: Ad? = null
     private var adFormat: ChartboostAdFormat = ChartboostAdFormat.INTERSTITIAL
 
-    // Set for rewarded ads only: the ad unit's RewardManager, and the reward the bid carries (`rwdd`).
-    private var rewardManager: RewardManager? = null
-    private var bidRewardedExt: RewardedExt = RewardedExt.defaultExt()
-
     override fun loadAd(adUnitConfiguration: AdUnitConfiguration, bidResponse: BidResponse) {
         val context = this.context
         if (context == null) {
@@ -77,8 +71,9 @@ internal class ChartboostFullscreenAdapter(
             return
         }
         if (adUnitConfiguration.isRewarded) {
-            rewardManager = adUnitConfiguration.rewardManager
-            bidRewardedExt = winningBid.rewardedExt
+            // Like Prebid's own renderer, give the ad unit the reward Prebid Server set on the bid. Prebid
+            // reads it whenever it grants the reward.
+            adUnitConfiguration.rewardManager.rewardedExt = winningBid.rewardedExt
         }
 
         val mediation = MediationFactory.create()
@@ -168,9 +163,6 @@ internal class ChartboostFullscreenAdapter(
     }
 
     override fun onRewardEarned(event: RewardEvent) = mainThread.execute {
-        // The SDK amount is always 0 for bidding ads, so report the reward Prebid Server set on the bid. Set it
-        // now, not at load: reloading the ad unit while this ad shows clears the RewardManager.
-        rewardManager?.rewardedExt = bidRewardedExt
         listener.onUserEarnedReward()
         eventListener?.onUserEarnedReward(adFormat)
     }
