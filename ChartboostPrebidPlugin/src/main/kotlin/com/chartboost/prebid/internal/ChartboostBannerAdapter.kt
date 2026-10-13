@@ -23,6 +23,7 @@ import com.chartboost.sdk.events.ShowError
 import com.chartboost.sdk.events.ShowEvent
 import org.prebid.mobile.AdSize
 import org.prebid.mobile.api.exceptions.AdException
+import org.prebid.mobile.api.rendering.PrebidDestroyable
 import org.prebid.mobile.rendering.bidding.data.bid.Bid
 import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
@@ -34,9 +35,9 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  * The banner path has no separate loadAd, so caching starts at construction. "loaded" is reported on cache
  * success, not on show, which re-fires under refresh, and "displayed" on impression.
  *
- * Teardown is driven entirely by window detachment, so a view created but never attached never reaches
- * onDetachedFromWindow and its ad is only reclaimed at GC. Prebid's plugin contract has no lifecycle-end
- * hook for that case.
+ * Prebid's [destroy] tears the banner down, which it calls from BannerView.destroy() or when a refresh
+ * replaces the view. Window detach does not, so a view that leaves and re-enters the window (lists, pagers)
+ * keeps its ad. A view the app drops without BannerView.destroy() is reclaimed at GC.
  *
  * A bid that names no usable size (see [hasUsableBannerSize]) falls back to [adUnitFallbackSize], the ad
  * unit's own configured slot, resolved by the caller via [AdUnitBannerSizeResolver]. A bid with a usable
@@ -50,10 +51,9 @@ internal class ChartboostBannerAdapter(
     private val factory: ChartboostAdFactory,
     private val mainThread: MainThreadExecutor = DefaultMainThreadExecutor,
     private val location: String = PREBID_LOCATION,
-    private val teardownScheduler: TeardownScheduler? = null,
     private var eventListener: ChartboostPrebidEventListener? = null,
     private val adUnitFallbackSize: AdSize? = null,
-) : FrameLayout(context), BannerCallback {
+) : FrameLayout(context), BannerCallback, PrebidDestroyable {
 
     private val loadedLatch = SingleFireLatch()
     private val displayedLatch = SingleFireLatch()
@@ -61,7 +61,6 @@ internal class ChartboostBannerAdapter(
     private val destroyed = SingleFireLatch()
 
     private var banner: Banner? = null
-    private var teardownAction: Runnable? = null
 
     init {
         val winningBid = bidResponse.winningBid
@@ -174,47 +173,13 @@ internal class ChartboostBannerAdapter(
         PluginLog.w("banner ad expired [reason ${event.reason}]")
     }
 
-    public override fun onAttachedToWindow() {
-        super.onAttachedToWindow()
-        // A re-attach inside the delay window cancels the pending teardown; once it has fired, a no-op.
-        teardownAction?.let { cancelTeardown(it) }
-        teardownAction = null
-        if (destroyed.hasFired) {
-            PluginLog.w("banner re-attached after teardown already ran; the slot stays blank — Prebid's plugin contract exposes no reload hook on this path")
+    override fun destroy() = mainThread.execute {
+        if (destroyed.fire()) {
+            banner?.detach()
+            banner = null
+            // Drop the publisher listener too, so a destroyed-but-not-GC'd view does not pin it; every use
+            // is already null-safe.
+            eventListener = null
         }
-    }
-
-    public override fun onDetachedFromWindow() {
-        super.onDetachedFromWindow()
-        // Cancel any scheduled teardown before scheduling a fresh one, so rapid RecyclerView/ViewPager
-        // recycling cannot accumulate runnables. A re-attach within TEARDOWN_DELAY_MS cancels it in
-        // onAttachedToWindow; a re-attach after it has fired finds the banner already torn down, which any
-        // timer-based teardown shares since Prebid's plugin contract has no lifecycle-end signal.
-        teardownAction?.let { cancelTeardown(it) }
-        val action = Runnable {
-            if (!isAttachedToWindow && destroyed.fire()) {
-                banner?.detach()
-                banner = null
-                // Drop the publisher listener too, so a recycled-but-not-GC'd view does not pin it; every
-                // use is already null-safe.
-                eventListener = null
-            }
-        }
-        teardownAction = action
-        scheduleTeardown(action)
-    }
-
-    private fun scheduleTeardown(action: Runnable) {
-        if (teardownScheduler != null) teardownScheduler.schedule(TEARDOWN_DELAY_MS, action)
-        else postDelayed(action, TEARDOWN_DELAY_MS)
-    }
-
-    private fun cancelTeardown(action: Runnable) {
-        if (teardownScheduler != null) teardownScheduler.cancel(action)
-        else removeCallbacks(action)
-    }
-
-    companion object {
-        internal const val TEARDOWN_DELAY_MS = 1_000L
     }
 }

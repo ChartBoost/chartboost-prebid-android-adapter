@@ -34,6 +34,7 @@ import io.mockk.verify
 import java.time.Duration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -45,17 +46,6 @@ import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
 
-private class FakeTeardownScheduler : TeardownScheduler {
-    var scheduled: Runnable? = null
-    val cancelledActions: MutableList<Runnable> = mutableListOf()
-    override fun schedule(delayMs: Long, action: Runnable) { scheduled = action }
-    override fun cancel(action: Runnable) {
-        cancelledActions += action
-        if (scheduled === action) scheduled = null
-    }
-    fun runPending() { scheduled?.run() }
-}
-
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
 class ChartboostBannerAdapterTest {
@@ -63,7 +53,11 @@ class ChartboostBannerAdapterTest {
     private val context: Context = ApplicationProvider.getApplicationContext()
     private val listener = mockk<DisplayViewListener>(relaxed = true)
     private val factory = FakeChartboostAdFactory()
-    private val teardownDelay: Duration = Duration.ofMillis(ChartboostBannerAdapter.TEARDOWN_DELAY_MS)
+
+    private companion object {
+        // Long enough that any detach-driven timer would have fired, like a list row scrolled off and back later.
+        val LONG_DETACH: Duration = Duration.ofSeconds(30)
+    }
 
     private fun adapter(
         bid: org.prebid.mobile.rendering.bidding.data.bid.Bid? = fakeBid(),
@@ -75,17 +69,11 @@ class ChartboostBannerAdapterTest {
         adUnitFallbackSize = adUnitFallbackSize,
     )
 
-    private fun adapterWithScheduler(scheduler: TeardownScheduler): ChartboostBannerAdapter =
-        ChartboostBannerAdapter(context, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() }, teardownScheduler = scheduler)
-
     /**
-     * Builds an adapter with no injected [TeardownScheduler] (the production default) and attaches it to a
-     * real Robolectric window, so [android.view.View.postDelayed]/[android.view.View.removeCallbacks] route
-     * through a real Handler bound to the main looper instead of the view's pre-attach run queue. The
-     * returned container is the real parent, so tests drive attach/detach through addView/removeView —
-     * the actual signal the production teardown Runnable's own isAttachedToWindow re-check depends on.
+     * Builds an adapter attached to a real Robolectric window. The returned container is the real parent,
+     * so tests drive attach/detach through addView/removeView, the way a list or pager does.
      */
-    private fun productionAdapter(): Pair<ViewGroup, ChartboostBannerAdapter> {
+    private fun attachedAdapter(): Pair<ViewGroup, ChartboostBannerAdapter> {
         // The real window attachment below runs a genuine measure/layout pass, which reads the mocked
         // banner's layoutParams; the class-level stub returns null (only so ViewGroup.addView accepts it),
         // so give it real params here for the one scenario that actually measures the tree.
@@ -98,81 +86,27 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
-    fun `detach with no injected scheduler tears the banner down after the real delay`() {
-        val (content, adapter) = productionAdapter()
+    fun `a banner re-attached after a long detach keeps its ad`() {
+        val (content, adapter) = attachedAdapter()
         content.removeView(adapter)
-        shadowOf(Looper.getMainLooper()).idleFor(teardownDelay)
-        verify { factory.banner.detach() }
+        shadowOf(Looper.getMainLooper()).idleFor(LONG_DETACH)
+        content.addView(adapter)
+        verify(exactly = 0) { factory.banner.detach() }
+        assertSame(factory.banner, adapter.getChildAt(0))
     }
 
     @Test
-    fun `a banner re-attached before the delay is never torn down by the stale timer when no scheduler is injected`() {
-        val (content, adapter) = productionAdapter()
-        content.removeView(adapter)
-        content.addView(adapter)
-        shadowOf(Looper.getMainLooper()).idleFor(teardownDelay.multipliedBy(2))
-        verify(exactly = 0) { factory.banner.detach() }
-    }
-
-    @Test
-    fun `rapid detach-attach cycles tear down exactly once at the final detach's deadline`() {
-        val quarter = teardownDelay.dividedBy(4)
-        val (content, adapter) = productionAdapter()
-        content.removeView(adapter) // stale timer due at t=4q
-        shadowOf(Looper.getMainLooper()).idleFor(quarter.multipliedBy(2)) // t=2q
-        content.addView(adapter)
-        content.removeView(adapter) // final deadline at t=6q
-        shadowOf(Looper.getMainLooper()).idleFor(quarter.multipliedBy(3)) // t=5q: past the stale deadline
-        verify(exactly = 0) { factory.banner.detach() }
-        shadowOf(Looper.getMainLooper()).idleFor(quarter.multipliedBy(2)) // t=7q: past the final deadline
+    fun `destroy tears down the SDK banner`() {
+        val adapter = adapter()
+        adapter.destroy()
         verify(exactly = 1) { factory.banner.detach() }
     }
 
     @Test
-    fun `detach with no re-attach tears the banner down after the delay`() {
-        val scheduler = FakeTeardownScheduler()
-        val adapter = adapterWithScheduler(scheduler)
-        adapter.onDetachedFromWindow()
-        scheduler.runPending()
-        verify { factory.banner.detach() }
-    }
-
-    @Test
-    fun `re-attach before the delay cancels teardown`() {
-        val scheduler = FakeTeardownScheduler()
-        val adapter = adapterWithScheduler(scheduler)
-        adapter.onDetachedFromWindow()
-        adapter.onAttachedToWindow()
-        scheduler.runPending()
-        verify(exactly = 0) { factory.banner.detach() }
-    }
-
-    @Test
-    fun `re-attach then detach reschedules teardown`() {
-        val scheduler = FakeTeardownScheduler()
-        val adapter = adapterWithScheduler(scheduler)
-        adapter.onDetachedFromWindow()
-        adapter.onAttachedToWindow()
-        adapter.onDetachedFromWindow()
-        scheduler.runPending()
-        verify { factory.banner.detach() }
-    }
-
-    @Test
-    fun `detach then detach without re-attach cancels the first scheduled teardown`() {
-        // Regression: onDetachedFromWindow cancels any existing teardownAction before scheduling a fresh
-        // one, so rapid RecyclerView or ViewPager cycles cannot accumulate runnables. Covers the cancel
-        // branch in ChartboostBannerAdapter that was untested before this test.
-        val scheduler = FakeTeardownScheduler()
-        val adapter = adapterWithScheduler(scheduler)
-        adapter.onDetachedFromWindow() // schedules first runnable
-        val firstAction = requireNotNull(scheduler.scheduled)
-        adapter.onDetachedFromWindow() // must cancel the first before scheduling a second
-        assertTrue(
-            "expected the first scheduled runnable to be passed to cancel() on the second detach",
-            scheduler.cancelledActions.contains(firstAction),
-        )
-        scheduler.runPending() // only the second runnable is still pending
+    fun `a second destroy does nothing`() {
+        val adapter = adapter()
+        adapter.destroy()
+        adapter.destroy()
         verify(exactly = 1) { factory.banner.detach() }
     }
 
@@ -405,11 +339,9 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
-    fun `callbacks after teardown are dropped`() {
-        val scheduler = FakeTeardownScheduler()
-        val adapter = adapterWithScheduler(scheduler)
-        adapter.onDetachedFromWindow()
-        scheduler.runPending() // fires teardown, claims the destroyed latch
+    fun `callbacks after destroy are dropped`() {
+        val adapter = adapter()
+        adapter.destroy()
         adapter.onImpressionRecorded(mockk(relaxed = true))
         verify(exactly = 0) { listener.onAdDisplayed() }
     }
