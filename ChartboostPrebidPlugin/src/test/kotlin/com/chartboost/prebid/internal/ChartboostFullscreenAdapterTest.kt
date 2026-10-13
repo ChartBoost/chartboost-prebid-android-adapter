@@ -12,6 +12,7 @@ import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.LEFTOVER_REWARD_TYPE
+import com.chartboost.prebid.fakes.NEWER_REWARD_TYPE
 import com.chartboost.prebid.fakes.cacheError
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
@@ -34,6 +35,8 @@ import io.mockk.verify
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.prebid.mobile.configuration.AdUnitConfiguration
@@ -85,6 +88,12 @@ class ChartboostFullscreenAdapterTest {
         every { trigger(listener) } answers { seen += config.rewardManager.rewardedExt.reward }
         return seen
     }
+
+    /**
+     * What `RewardedAdUnit.loadAd()` does to the shared [config]. Prebid allows that load once the shown ad
+     * reports displayed, so an app can load the next ad while this one is still on screen.
+     */
+    private fun loadOnTheAdUnit(config: AdUnitConfiguration) = config.rewardManager.clear()
 
     @Test
     fun `loadAd builds an interstitial when the unit is not rewarded`() {
@@ -207,6 +216,51 @@ class ChartboostFullscreenAdapterTest {
         val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(reward)))) }
         adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
         assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `a load on the ad unit while the ad shows still reports the Prebid Server reward of the shown ad`() {
+        val reward = fakeReward()
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config) { it.onUserEarnedReward() }
+        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(reward)))) }
+        loadOnTheAdUnit(config)
+        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
+        assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `a rewarded ad closed after a load on the ad unit still reports the Prebid Server reward`() {
+        val reward = fakeReward()
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
+        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(reward)))) }
+        loadOnTheAdUnit(config)
+        adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
+        assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `granting the reward keeps the reward a newer load put on the ad unit`() {
+        val config = rewardedConfig()
+        val adapter = adapter().also {
+            it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(fakeReward()))))
+        }
+        val newer = fakeRewardedExt(fakeReward(type = NEWER_REWARD_TYPE))
+        config.rewardManager.rewardedExt = newer
+        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
+        assertSame(newer, config.rewardManager.rewardedExt)
+    }
+
+    @Test
+    fun `a load from inside the reward callback is not undone`() {
+        val config = rewardedConfig()
+        every { listener.onUserEarnedReward() } answers { loadOnTheAdUnit(config) }
+        val adapter = adapter().also {
+            it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(fakeReward()))))
+        }
+        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
+        assertNull(config.rewardManager.rewardedExt.reward)
     }
 
     @Test

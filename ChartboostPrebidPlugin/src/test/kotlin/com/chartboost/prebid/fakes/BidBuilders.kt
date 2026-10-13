@@ -18,6 +18,7 @@ import org.prebid.mobile.rendering.interstitial.rewarded.RewardedExt
 internal const val FAKE_REWARD_TYPE = "coins"
 internal const val FAKE_REWARD_COUNT = 5
 internal const val LEFTOVER_REWARD_TYPE = "leftover"
+internal const val NEWER_REWARD_TYPE = "newer"
 
 /** Builder for a winning [Bid]; Bid has no public constructor, so it is mocked. */
 internal fun fakeBid(
