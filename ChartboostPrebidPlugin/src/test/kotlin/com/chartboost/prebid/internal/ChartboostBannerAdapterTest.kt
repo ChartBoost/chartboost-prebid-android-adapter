@@ -12,6 +12,7 @@ import android.os.Looper
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
+import com.applovin.mediation.ads.MaxAdView
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
 import com.chartboost.prebid.ChartboostPrebidPluginAdapter
@@ -29,10 +30,9 @@ import com.chartboost.sdk.events.ExpirationEvent
 import com.chartboost.sdk.events.ImpressionEvent
 import com.chartboost.sdk.events.ShowError
 import com.chartboost.sdk.events.ShowEvent
+import com.google.android.gms.ads.AdView
 import io.mockk.every
 import io.mockk.mockk
-import com.applovin.mediation.ads.MaxAdView
-import com.google.android.gms.ads.AdView
 import io.mockk.verify
 import java.time.Duration
 import org.junit.Assert.assertEquals
@@ -229,6 +229,15 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
+    fun `a detach after destroy schedules no teardown`() {
+        val scheduler = FakeTeardownScheduler()
+        val adapter = adapterWithScheduler(scheduler)
+        adapter.destroy()
+        adapter.onDetachedFromWindow()
+        assertNull(scheduler.scheduled)
+    }
+
+    @Test
     fun `destroy cancels the pending teardown`() {
         val scheduler = FakeTeardownScheduler()
         val adapter = adapterWithScheduler(scheduler)
@@ -256,14 +265,17 @@ class ChartboostBannerAdapterTest {
             every { it.preferredPluginRendererVersion } returns plugin.getVersion()
         }
         val bannerConfig = AdUnitConfiguration().apply { setAdFormat(AdFormat.BANNER) }
+        // The registry is process-wide and cannot hand back a plugin it replaced, so only a plugin this test
+        // added is removed, and one that was already registered under the name is left alone.
         val registry = PrebidMobilePluginRegister.getInstance()
+        val addedByThisTest = !registry.containsPlugin(plugin.getName())
         registry.registerPlugin(plugin)
         try {
             DisplayView(context, listener, bannerConfig, bidResponse).destroy()
             shadowOf(Looper.getMainLooper()).idle() // the plugin's default executor posts the SDK teardown
             verify(exactly = 1) { factory.banner.detach() }
         } finally {
-            registry.unregisterPlugin(plugin)
+            if (addedByThisTest) registry.unregisterPlugin(plugin)
         }
     }
 

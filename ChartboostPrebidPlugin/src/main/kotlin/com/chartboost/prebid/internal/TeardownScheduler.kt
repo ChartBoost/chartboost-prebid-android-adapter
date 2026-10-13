@@ -6,7 +6,7 @@
 
 package com.chartboost.prebid.internal
 
-/** Test seam for the banner teardown timer; production uses the host View's postDelayed/removeCallbacks. */
+/** Test seam for the banner teardown timer; production uses the adapter's own main-looper Handler. */
 internal interface TeardownScheduler {
     fun schedule(delayMs: Long, action: Runnable)
     fun cancel(action: Runnable)

@@ -10,7 +10,8 @@ import android.annotation.SuppressLint
 import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
-import android.view.ViewParent
+import android.os.Handler
+import android.os.Looper
 import android.widget.FrameLayout
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
@@ -69,6 +70,10 @@ internal class ChartboostBannerAdapter(
 
     private var banner: Banner? = null
     private var teardownAction: Runnable? = null
+
+    // Not View.postDelayed/removeCallbacks: those only reach the handler of the window the view is attached
+    // to right now, so a timer posted under one window would survive a cancel after a re-attach to another.
+    private val teardownHandler = Handler(Looper.getMainLooper())
 
     init {
         val winningBid = bidResponse.winningBid
@@ -195,6 +200,7 @@ internal class ChartboostBannerAdapter(
 
     public override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        if (destroyed.hasFired) return
         // Cancel any scheduled teardown before scheduling a fresh one, so rapid RecyclerView/ViewPager
         // recycling cannot accumulate runnables.
         cancelPendingTeardown()
@@ -225,24 +231,12 @@ internal class ChartboostBannerAdapter(
         return null
     }
 
-    private fun hasAdHostAbove(): Boolean {
-        var ancestor: ViewParent? = parent
-        while (ancestor != null) {
-            if (ancestor is BannerView || ancestor.javaClass.hasSuperclassNamed(MEDIATION_AD_HOST_CLASSES)) return true
-            ancestor = ancestor.parent
+    private fun hasAdHostAbove(): Boolean =
+        generateSequence(parent) { it.parent }.any { ancestor ->
+            ancestor is BannerView ||
+                generateSequence<Class<*>>(ancestor.javaClass) { it.superclass }
+                    .any { it.name in MEDIATION_AD_HOST_CLASSES }
         }
-        return false
-    }
-
-    /** True when this class or any superclass has one of [names], so no compile dependency on the SDK is needed. */
-    private fun Class<*>.hasSuperclassNamed(names: Set<String>): Boolean {
-        var type: Class<*>? = this
-        while (type != null) {
-            if (type.name in names) return true
-            type = type.superclass
-        }
-        return false
-    }
 
     /**
      * The one teardown path, shared by Prebid's [destroy] and the detach timer. Claims [destroyed] before
@@ -267,12 +261,12 @@ internal class ChartboostBannerAdapter(
 
     private fun scheduleTeardown(action: Runnable) {
         if (teardownScheduler != null) teardownScheduler.schedule(TEARDOWN_DELAY_MS, action)
-        else postDelayed(action, TEARDOWN_DELAY_MS)
+        else teardownHandler.postDelayed(action, TEARDOWN_DELAY_MS)
     }
 
     private fun cancelTeardown(action: Runnable) {
         if (teardownScheduler != null) teardownScheduler.cancel(action)
-        else removeCallbacks(action)
+        else teardownHandler.removeCallbacks(action)
     }
 
     companion object {
