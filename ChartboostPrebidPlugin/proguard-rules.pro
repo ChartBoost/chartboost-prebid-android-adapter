@@ -13,3 +13,12 @@
 
 -keep public class com.chartboost.prebid.ChartboostPrebidPluginAdapter { *; }
 -keep public class com.chartboost.prebid.ChartboostPrebidAdapter { *; }
+
+# The banner adapter recognizes an AdMob or MAX ad view above it by class name, not by type, so it needs no
+# dependency on either SDK. R8 must not rename those classes in a minified app, or the match silently fails
+# and a view parked in a list or pager is torn down. The dontwarn lines keep apps that ship neither SDK
+# building.
+-keepnames class com.google.android.gms.ads.BaseAdView
+-keepnames class com.applovin.mediation.ads.MaxAdView
+-dontwarn com.google.android.gms.ads.BaseAdView
+-dontwarn com.applovin.mediation.ads.MaxAdView

@@ -63,7 +63,8 @@ PrebidMobile.initializeSdk(context, "https://<your-pbs-host>/openrtb2/auction") 
 ```
 
 Then load a rendering ad unit as usual (`BannerView` / `InterstitialAdUnit` / `RewardedAdUnit`); a
-Chartboost-flagged bid routes to this plugin automatically.
+Chartboost-flagged bid routes to this plugin automatically. Call `BannerView.destroy()` when you no longer
+need the banner, as Prebid's own docs advise, so the Chartboost banner is released.
 
 ## Configuration
 

@@ -7,7 +7,11 @@
 package com.chartboost.prebid.internal
 
 import android.annotation.SuppressLint
+import android.app.Activity
 import android.content.Context
+import android.content.ContextWrapper
+import android.os.Handler
+import android.os.Looper
 import android.widget.FrameLayout
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
@@ -23,6 +27,8 @@ import com.chartboost.sdk.events.ShowError
 import com.chartboost.sdk.events.ShowEvent
 import org.prebid.mobile.AdSize
 import org.prebid.mobile.api.exceptions.AdException
+import org.prebid.mobile.api.rendering.BannerView
+import org.prebid.mobile.api.rendering.PrebidDestroyable
 import org.prebid.mobile.rendering.bidding.data.bid.Bid
 import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
@@ -34,9 +40,11 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  * The banner path has no separate loadAd, so caching starts at construction. "loaded" is reported on cache
  * success, not on show, which re-fires under refresh, and "displayed" on impression.
  *
- * Teardown is driven entirely by window detachment, so a view created but never attached never reaches
- * onDetachedFromWindow and its ad is only reclaimed at GC. Prebid's plugin contract has no lifecycle-end
- * hook for that case.
+ * Prebid's [destroy] tears the banner down, which it calls from BannerView.destroy(), when a refresh
+ * replaces the view, and from MAX. A detached view is torn down after a short delay only if its Activity is
+ * gone or no known ad host (BannerView, AdMob AdView, MaxAdView) is above it any more. So a list or pager
+ * that parks the view keeps its ad, and a view that Prebid or a mediation SDK dropped without destroy() (the
+ * ad server or AdMob replacing the ad) is still released.
  *
  * A bid that names no usable size (see [hasUsableBannerSize]) falls back to [adUnitFallbackSize], the ad
  * unit's own configured slot, resolved by the caller via [AdUnitBannerSizeResolver]. A bid with a usable
@@ -53,7 +61,7 @@ internal class ChartboostBannerAdapter(
     private val teardownScheduler: TeardownScheduler? = null,
     private var eventListener: ChartboostPrebidEventListener? = null,
     private val adUnitFallbackSize: AdSize? = null,
-) : FrameLayout(context), BannerCallback {
+) : FrameLayout(context), BannerCallback, PrebidDestroyable {
 
     private val loadedLatch = SingleFireLatch()
     private val displayedLatch = SingleFireLatch()
@@ -62,6 +70,10 @@ internal class ChartboostBannerAdapter(
 
     private var banner: Banner? = null
     private var teardownAction: Runnable? = null
+
+    // Not View.postDelayed/removeCallbacks: those only reach the handler of the window the view is attached
+    // to right now, so a timer posted under one window would survive a cancel after a re-attach to another.
+    private val teardownHandler = Handler(Looper.getMainLooper())
 
     init {
         val winningBid = bidResponse.winningBid
@@ -121,6 +133,7 @@ internal class ChartboostBannerAdapter(
 
     /** Reports a load failure to the Prebid delegate and the optional plugin listener, at most once. */
     private fun reportFailed(error: AdException) {
+        if (destroyed.hasFired) return
         // Mirrors onAdLoaded's own !failedLatch.hasFired check: a cache error arriving after a successful
         // load must not fire FAILED-after-LOADED.
         if (!loadedLatch.hasFired && failedLatch.fire()) {
@@ -174,11 +187,12 @@ internal class ChartboostBannerAdapter(
         PluginLog.w("banner ad expired [reason ${event.reason}]")
     }
 
+    override fun destroy() = tearDown()
+
     public override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         // A re-attach inside the delay window cancels the pending teardown; once it has fired, a no-op.
-        teardownAction?.let { cancelTeardown(it) }
-        teardownAction = null
+        cancelPendingTeardown()
         if (destroyed.hasFired) {
             PluginLog.w("banner re-attached after teardown already ran; the slot stays blank — Prebid's plugin contract exposes no reload hook on this path")
         }
@@ -186,35 +200,82 @@ internal class ChartboostBannerAdapter(
 
     public override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        if (destroyed.hasFired) return
         // Cancel any scheduled teardown before scheduling a fresh one, so rapid RecyclerView/ViewPager
-        // recycling cannot accumulate runnables. A re-attach within TEARDOWN_DELAY_MS cancels it in
-        // onAttachedToWindow; a re-attach after it has fired finds the banner already torn down, which any
-        // timer-based teardown shares since Prebid's plugin contract has no lifecycle-end signal.
-        teardownAction?.let { cancelTeardown(it) }
+        // recycling cannot accumulate runnables.
+        cancelPendingTeardown()
         val action = Runnable {
-            if (!isAttachedToWindow && destroyed.fire()) {
-                banner?.detach()
-                banner = null
-                // Drop the publisher listener too, so a recycled-but-not-GC'd view does not pin it; every
-                // use is already null-safe.
-                eventListener = null
-            }
+            if (!isAttachedToWindow && isDroppedForGood()) tearDown()
         }
         teardownAction = action
         scheduleTeardown(action)
     }
 
+    /**
+     * True when nothing will bring this detached view back: its Activity is gone, or no ad host that owns
+     * a banner's lifecycle is above it any more. An unknown host counts as dropped, so a view parked
+     * under one is released, never leaked.
+     */
+    private fun isDroppedForGood(): Boolean {
+        val activity = hostActivity()
+        if (activity != null && (activity.isFinishing || activity.isDestroyed)) return true
+        return !hasAdHostAbove()
+    }
+
+    private fun hostActivity(): Activity? {
+        var current: Context? = context
+        while (current is ContextWrapper) {
+            if (current is Activity) return current
+            current = current.baseContext
+        }
+        return null
+    }
+
+    private fun hasAdHostAbove(): Boolean =
+        generateSequence(parent) { it.parent }.any { ancestor ->
+            ancestor is BannerView ||
+                generateSequence<Class<*>>(ancestor.javaClass) { it.superclass }
+                    .any { it.name in MEDIATION_AD_HOST_CLASSES }
+        }
+
+    /**
+     * The one teardown path, shared by Prebid's [destroy] and the detach timer. Claims [destroyed] before
+     * anything is posted, so a callback already queued on the main thread sees it and is dropped.
+     */
+    private fun tearDown() {
+        if (!destroyed.fire()) return
+        cancelPendingTeardown()
+        mainThread.execute {
+            banner?.detach()
+            banner = null
+            // Drop the publisher listener too, so a destroyed-but-not-GC'd view does not pin it; every use
+            // is already null-safe.
+            eventListener = null
+        }
+    }
+
+    private fun cancelPendingTeardown() {
+        teardownAction?.let { cancelTeardown(it) }
+        teardownAction = null
+    }
+
     private fun scheduleTeardown(action: Runnable) {
         if (teardownScheduler != null) teardownScheduler.schedule(TEARDOWN_DELAY_MS, action)
-        else postDelayed(action, TEARDOWN_DELAY_MS)
+        else teardownHandler.postDelayed(action, TEARDOWN_DELAY_MS)
     }
 
     private fun cancelTeardown(action: Runnable) {
         if (teardownScheduler != null) teardownScheduler.cancel(action)
-        else removeCallbacks(action)
+        else teardownHandler.removeCallbacks(action)
     }
 
     companion object {
         internal const val TEARDOWN_DELAY_MS = 1_000L
+
+        // AdMob's AdView and AdManagerAdView both extend BaseAdView. Matched by name, so the adapter takes no
+        // Google or AppLovin dependency.
+        private const val ADMOB_BASE_AD_VIEW_CLASS = "com.google.android.gms.ads.BaseAdView"
+        private const val MAX_AD_VIEW_CLASS = "com.applovin.mediation.ads.MaxAdView"
+        private val MEDIATION_AD_HOST_CLASSES = setOf(ADMOB_BASE_AD_VIEW_CLASS, MAX_AD_VIEW_CLASS)
     }
 }
