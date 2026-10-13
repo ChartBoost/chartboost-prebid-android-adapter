@@ -151,6 +151,14 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
+    fun `a rewarded show failure that uses up the ad reports failed to load so the ad unit can reload`() {
+        val adapter = readyAdapter(rewarded = true)
+        every { factory.rewarded.isCached() } returns false
+        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.INTERNAL))
+        verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
+    }
+
+    @Test
     fun `a show failure that uses up the ad notifies the event listener of failure`() {
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
         val adapter = readyAdapter(eventListener = events)

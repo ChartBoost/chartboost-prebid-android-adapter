@@ -12,9 +12,10 @@ import com.chartboost.sdk.events.ShowError
 import org.prebid.mobile.api.exceptions.AdException
 
 /**
- * Maps a Chartboost [CacheError] to a Prebid [AdException], keeping the raw Chartboost code in the
- * message, since `AdException(type, message)` is the only constructor. An unknown or future code still
- * carries its raw value rather than collapsing into a blanket internal error.
+ * Maps Chartboost cache, show and expiry errors, plus the adapter's own failures, to the Prebid
+ * [AdException] the listeners take, or to a log line for a show error that is only logged. The raw
+ * Chartboost code stays in the message, since `AdException(type, message)` is the only constructor. An
+ * unknown or future code still carries its raw value rather than collapsing into a blanket internal error.
  */
 internal object ChartboostErrorMapper {
 
