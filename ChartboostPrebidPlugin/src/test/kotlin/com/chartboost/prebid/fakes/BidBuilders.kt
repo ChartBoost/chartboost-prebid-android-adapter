@@ -10,17 +10,20 @@ import io.mockk.every
 import io.mockk.mockk
 import org.prebid.mobile.rendering.bidding.data.bid.Bid
 import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
+import org.prebid.mobile.rendering.interstitial.rewarded.RewardedExt
 
 /** Builder for a winning [Bid]; Bid has no public constructor, so it is mocked. */
 internal fun fakeBid(
     adm: String? = "<chartboost-adm>",
     width: Int = 320,
     height: Int = 50,
+    rewardedExt: RewardedExt = RewardedExt.defaultExt(),
 ): Bid {
     val bid = mockk<Bid>(relaxed = true)
     every { bid.adm } returns adm
     every { bid.width } returns width
     every { bid.height } returns height
+    every { bid.rewardedExt } returns rewardedExt
     return bid
 }
 

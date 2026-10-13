@@ -35,6 +35,10 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.prebid.mobile.configuration.AdUnitConfiguration
 import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerListener
+import org.prebid.mobile.rendering.interstitial.rewarded.Reward
+import org.prebid.mobile.rendering.interstitial.rewarded.RewardedClosingRules
+import org.prebid.mobile.rendering.interstitial.rewarded.RewardedCompletionRules
+import org.prebid.mobile.rendering.interstitial.rewarded.RewardedExt
 
 class ChartboostFullscreenAdapterTest {
 
@@ -68,6 +72,18 @@ class ChartboostFullscreenAdapterTest {
 
     private fun config(rewarded: Boolean): AdUnitConfiguration =
         mockk<AdUnitConfiguration>(relaxed = true).also { every { it.isRewarded } returns rewarded }
+
+    /** A real rewarded configuration, so the test reads the same RewardManager state Prebid reads. */
+    private fun rewardedConfig() = AdUnitConfiguration().also { it.isRewarded = true }
+
+    private fun rewardedExt(reward: Reward?) = RewardedExt(reward, RewardedCompletionRules(), RewardedClosingRules())
+
+    /** What Prebid would read from [config] each time the listener is told the user earned the reward. */
+    private fun rewardsSeenByPrebid(config: AdUnitConfiguration): List<Reward?> {
+        val seen = mutableListOf<Reward?>()
+        every { listener.onUserEarnedReward() } answers { seen += config.rewardManager.rewardedExt.reward }
+        return seen
+    }
 
     @Test
     fun `loadAd builds an interstitial when the unit is not rewarded`() {
@@ -158,6 +174,39 @@ class ChartboostFullscreenAdapterTest {
     fun `reward is forwarded as user earned reward`() {
         adapter().onRewardEarned(mockk<RewardEvent>(relaxed = true))
         verify { listener.onUserEarnedReward() }
+    }
+
+    @Test
+    fun `a rewarded ad reports the Prebid Server reward of the bid to Prebid`() {
+        val reward = Reward("coins", 5, null)
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config)
+        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = rewardedExt(reward)))) }
+        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
+        assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `a rewarded bid without a Prebid Server reward reports no reward`() {
+        val config = rewardedConfig()
+        // A reward left in the manager must not leak into an ad whose bid carries none.
+        config.rewardManager.rewardedExt = rewardedExt(Reward("leftover", 1, null))
+        val seen = rewardsSeenByPrebid(config)
+        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = RewardedExt.defaultExt()))) }
+        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
+        assertEquals(listOf<Reward?>(null), seen)
+    }
+
+    @Test
+    fun `reloading the ad unit before the reward keeps the reward of the ad that was shown`() {
+        val reward = Reward("coins", 5, null)
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config)
+        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = rewardedExt(reward)))) }
+        // RewardedAdUnit.loadAd() clears the manager; Prebid allows a reload while the ad is showing.
+        config.rewardManager.clear()
+        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
+        assertEquals(listOf<Reward?>(reward), seen)
     }
 
     @Test
