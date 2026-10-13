@@ -14,6 +14,7 @@ import android.widget.FrameLayout
 import androidx.test.core.app.ApplicationProvider
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
+import com.chartboost.prebid.ChartboostPrebidPluginAdapter
 import com.chartboost.prebid.LogLevel
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.cacheError
@@ -30,21 +31,54 @@ import com.chartboost.sdk.events.ShowError
 import com.chartboost.sdk.events.ShowEvent
 import io.mockk.every
 import io.mockk.mockk
+import com.applovin.mediation.ads.MaxAdView
+import com.google.android.gms.ads.AdView
 import io.mockk.verify
 import java.time.Duration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.prebid.mobile.AdSize
+import org.prebid.mobile.api.data.AdFormat
+import org.prebid.mobile.api.rendering.BannerView
+import org.prebid.mobile.api.rendering.DisplayView
+import org.prebid.mobile.api.rendering.pluginrenderer.PrebidMobilePluginRegister
+import org.prebid.mobile.configuration.AdUnitConfiguration
 import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
+import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowLog
+
+private class FakeTeardownScheduler : TeardownScheduler {
+    var scheduled: Runnable? = null
+    val cancelledActions: MutableList<Runnable> = mutableListOf()
+    override fun schedule(delayMs: Long, action: Runnable) { scheduled = action }
+    override fun cancel(action: Runnable) {
+        cancelledActions += action
+        if (scheduled === action) scheduled = null
+    }
+    fun runPending() { scheduled?.run() }
+}
+
+/** Queues what the adapter posts, so a test can run it later, after another call has already happened. */
+private class QueuedMainThread : MainThreadExecutor {
+    private val pending = ArrayDeque<() -> Unit>()
+    override fun execute(block: () -> Unit) { pending.addLast(block) }
+    fun runAll() { while (pending.isNotEmpty()) pending.removeFirst()() }
+}
+
+/** A banner adapter nested the way a host builds it: content > host > display container > adapter. */
+private class BannerScreen(
+    val activityController: ActivityController<Activity>,
+    val content: ViewGroup,
+    val host: ViewGroup,
+    val displayContainer: ViewGroup,
+)
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33])
@@ -55,8 +89,12 @@ class ChartboostBannerAdapterTest {
     private val factory = FakeChartboostAdFactory()
 
     private companion object {
+        const val CONFIG_ID = "config-id"
+        val BANNER_AD_SIZE = AdSize(320, 50)
+
         // Long enough that any detach-driven timer would have fired, like a list row scrolled off and back later.
         val LONG_DETACH: Duration = Duration.ofSeconds(30)
+        val TEARDOWN_DELAY: Duration = Duration.ofMillis(ChartboostBannerAdapter.TEARDOWN_DELAY_MS)
     }
 
     private fun adapter(
@@ -69,30 +107,135 @@ class ChartboostBannerAdapterTest {
         adUnitFallbackSize = adUnitFallbackSize,
     )
 
+    private fun adapterWithScheduler(scheduler: TeardownScheduler): ChartboostBannerAdapter =
+        ChartboostBannerAdapter(
+            context, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() },
+            teardownScheduler = scheduler,
+        )
+
+    private fun queuedAdapter(
+        mainThread: QueuedMainThread,
+        bid: org.prebid.mobile.rendering.bidding.data.bid.Bid? = fakeBid(),
+    ) = ChartboostBannerAdapter(context, listener, fakeBidResponse(bid), factory, mainThread)
+
     /**
-     * Builds an adapter attached to a real Robolectric window. The returned container is the real parent,
-     * so tests drive attach/detach through addView/removeView, the way a list or pager does.
+     * Builds an adapter inside [host] on a real Robolectric window. The returned views are the real parents,
+     * so tests drive attach and detach through addView/removeView, the way a list, pager or ad host does.
+     * The display container stands in for Prebid's DisplayView, which sits between the host and the adapter.
      */
-    private fun attachedAdapter(): Pair<ViewGroup, ChartboostBannerAdapter> {
+    private fun screen(host: (Context) -> ViewGroup): BannerScreen {
         // The real window attachment below runs a genuine measure/layout pass, which reads the mocked
         // banner's layoutParams; the class-level stub returns null (only so ViewGroup.addView accepts it),
         // so give it real params here for the one scenario that actually measures the tree.
         every { factory.banner.layoutParams } returns FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
-        val adapter = ChartboostBannerAdapter(context, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() })
-        val activity = Robolectric.buildActivity(Activity::class.java).setup().get()
+        val activityController = Robolectric.buildActivity(Activity::class.java).setup()
+        val activity = activityController.get()
+        val adapter = ChartboostBannerAdapter(activity, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() })
+        val displayContainer = FrameLayout(activity).apply { addView(adapter) }
+        val hostView = host(activity).apply { addView(displayContainer) }
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
-        content.addView(adapter)
-        return content to adapter
+        content.addView(hostView)
+        return BannerScreen(activityController, content, hostView, displayContainer)
+    }
+
+    private fun idleFor(duration: Duration) = shadowOf(Looper.getMainLooper()).idleFor(duration)
+
+    @Test
+    fun `a banner parked under a BannerView for longer than the delay keeps its ad when re-attached`() {
+        val screen = screen { BannerView(it, CONFIG_ID, BANNER_AD_SIZE) }
+        screen.content.removeView(screen.host)
+        idleFor(LONG_DETACH)
+        screen.content.addView(screen.host)
+        verify(exactly = 0) { factory.banner.detach() }
     }
 
     @Test
-    fun `a banner re-attached after a long detach keeps its ad`() {
-        val (content, adapter) = attachedAdapter()
-        content.removeView(adapter)
-        shadowOf(Looper.getMainLooper()).idleFor(LONG_DETACH)
-        content.addView(adapter)
+    fun `a banner whose display container leaves its BannerView is torn down after the delay`() {
+        // The ad server winning after a Prebid win swaps our container out without ever destroying it.
+        val screen = screen { BannerView(it, CONFIG_ID, BANNER_AD_SIZE) }
+        screen.host.removeView(screen.displayContainer)
+        idleFor(TEARDOWN_DELAY)
+        verify(exactly = 1) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `a banner parked under an AdMob ad view keeps its ad`() {
+        val screen = screen { AdView(it) }
+        screen.content.removeView(screen.host)
+        idleFor(LONG_DETACH)
         verify(exactly = 0) { factory.banner.detach() }
-        assertSame(factory.banner, adapter.getChildAt(0))
+    }
+
+    @Test
+    fun `a banner removed from its AdMob ad view is torn down after the delay`() {
+        val screen = screen { AdView(it) }
+        screen.host.removeView(screen.displayContainer)
+        idleFor(TEARDOWN_DELAY)
+        verify(exactly = 1) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `a banner parked under a MAX ad view keeps its ad`() {
+        val screen = screen { MaxAdView(it) }
+        screen.content.removeView(screen.host)
+        idleFor(LONG_DETACH)
+        verify(exactly = 0) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `a banner parked under a BannerView is torn down when its Activity is finishing`() {
+        val screen = screen { BannerView(it, CONFIG_ID, BANNER_AD_SIZE) }
+        screen.activityController.get().finish()
+        screen.content.removeView(screen.host)
+        idleFor(TEARDOWN_DELAY)
+        verify(exactly = 1) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `a banner parked under a BannerView is torn down when its Activity is destroyed`() {
+        val screen = screen { BannerView(it, CONFIG_ID, BANNER_AD_SIZE) }
+        screen.content.removeView(screen.host)
+        screen.activityController.pause().stop().destroy()
+        idleFor(TEARDOWN_DELAY)
+        verify(exactly = 1) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `a detached banner with no known ad host is torn down after the delay`() {
+        val screen = screen { FrameLayout(it) }
+        screen.content.removeView(screen.host)
+        idleFor(TEARDOWN_DELAY)
+        verify(exactly = 1) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `a re-attach before the delay cancels the pending teardown`() {
+        val scheduler = FakeTeardownScheduler()
+        val adapter = adapterWithScheduler(scheduler)
+        adapter.onDetachedFromWindow()
+        adapter.onAttachedToWindow()
+        scheduler.runPending()
+        verify(exactly = 0) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `a second detach cancels the first scheduled teardown`() {
+        val scheduler = FakeTeardownScheduler()
+        val adapter = adapterWithScheduler(scheduler)
+        adapter.onDetachedFromWindow()
+        val firstAction = requireNotNull(scheduler.scheduled)
+        adapter.onDetachedFromWindow()
+        assertTrue(scheduler.cancelledActions.contains(firstAction))
+    }
+
+    @Test
+    fun `destroy cancels the pending teardown`() {
+        val scheduler = FakeTeardownScheduler()
+        val adapter = adapterWithScheduler(scheduler)
+        adapter.onDetachedFromWindow()
+        val pending = requireNotNull(scheduler.scheduled)
+        adapter.destroy()
+        assertTrue(scheduler.cancelledActions.contains(pending))
     }
 
     @Test
@@ -100,6 +243,28 @@ class ChartboostBannerAdapterTest {
         val adapter = adapter()
         adapter.destroy()
         verify(exactly = 1) { factory.banner.detach() }
+    }
+
+    @Test
+    fun `destroying Prebid's DisplayView tears the SDK banner down`() {
+        // The real Prebid path: BannerView.destroy() calls DisplayView.destroy(), which destroys the banner
+        // view the plugin returned.
+        val plugin = ChartboostPrebidPluginAdapter(factory)
+        val bid = fakeBid().also { every { it.prebid } returns null }
+        val bidResponse = fakeBidResponse(bid).also {
+            every { it.preferredPluginRendererName } returns plugin.getName()
+            every { it.preferredPluginRendererVersion } returns plugin.getVersion()
+        }
+        val bannerConfig = AdUnitConfiguration().apply { setAdFormat(AdFormat.BANNER) }
+        val registry = PrebidMobilePluginRegister.getInstance()
+        registry.registerPlugin(plugin)
+        try {
+            DisplayView(context, listener, bannerConfig, bidResponse).destroy()
+            shadowOf(Looper.getMainLooper()).idle() // the plugin's default executor posts the SDK teardown
+            verify(exactly = 1) { factory.banner.detach() }
+        } finally {
+            registry.unregisterPlugin(plugin)
+        }
     }
 
     @Test
@@ -339,10 +504,55 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
-    fun `callbacks after destroy are dropped`() {
+    fun `a load callback after destroy is dropped`() {
+        val adapter = adapter()
+        adapter.destroy()
+        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
+        verify(exactly = 0) { listener.onAdLoaded() }
+    }
+
+    @Test
+    fun `a click after destroy is dropped`() {
+        val adapter = adapter()
+        adapter.destroy()
+        adapter.onAdClicked(mockk<ClickEvent>(relaxed = true), null)
+        verify(exactly = 0) { listener.onAdClicked() }
+    }
+
+    @Test
+    fun `an impression after destroy is dropped`() {
         val adapter = adapter()
         adapter.destroy()
         adapter.onImpressionRecorded(mockk(relaxed = true))
         verify(exactly = 0) { listener.onAdDisplayed() }
+    }
+
+    @Test
+    fun `a failure posted before destroy is dropped after it`() {
+        val mainThread = QueuedMainThread()
+        val adapter = queuedAdapter(mainThread, bid = fakeBid(adm = null)) // posts a failure on construction
+        adapter.destroy()
+        mainThread.runAll()
+        verify(exactly = 0) { listener.onAdFailed(any()) }
+    }
+
+    @Test
+    fun `a load callback queued before destroy does not reach the Prebid listener`() {
+        val mainThread = QueuedMainThread()
+        val adapter = queuedAdapter(mainThread)
+        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null) // queued, not run yet
+        adapter.destroy()
+        mainThread.runAll()
+        verify(exactly = 0) { listener.onAdLoaded() }
+    }
+
+    @Test
+    fun `a load callback queued before destroy does not show the banner`() {
+        val mainThread = QueuedMainThread()
+        val adapter = queuedAdapter(mainThread)
+        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null) // queued, not run yet
+        adapter.destroy()
+        mainThread.runAll()
+        verify(exactly = 0) { factory.banner.show() }
     }
 }
