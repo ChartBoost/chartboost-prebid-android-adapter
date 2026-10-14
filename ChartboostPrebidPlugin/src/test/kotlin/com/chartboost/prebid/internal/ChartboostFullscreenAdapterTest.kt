@@ -79,7 +79,7 @@ class ChartboostFullscreenAdapterTest {
     /** A real rewarded configuration, so the test reads the same RewardManager state Prebid reads. */
     private fun rewardedConfig() = AdUnitConfiguration().also { it.isRewarded = true }
 
-    /** What Prebid would read from [config] each time [trigger] reaches the listener. */
+    /** What [config] holds each time [trigger] reaches the listener, which is what Prebid reads for that call. */
     private fun rewardsSeenByPrebid(
         config: AdUnitConfiguration,
         trigger: (InterstitialControllerListener) -> Unit,
@@ -90,8 +90,8 @@ class ChartboostFullscreenAdapterTest {
     }
 
     /**
-     * What `RewardedAdUnit.loadAd()` does to the shared [config]. Prebid allows that load once the shown ad
-     * reports displayed, so an app can load the next ad while this one is still on screen.
+     * What `RewardedAdUnit.loadAd()` does to the shared [config], even when Prebid then skips the load. An app
+     * can call it while the shown ad is still on screen.
      */
     private fun loadOnTheAdUnit(config: AdUnitConfiguration) = config.rewardManager.clear()
 
@@ -230,7 +230,7 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
-    fun `a rewarded ad closed after a load on the ad unit still reports the Prebid Server reward`() {
+    fun `a rewarded ad closed before the SDK reward and after a load on the ad unit still reports the Prebid Server reward`() {
         val reward = fakeReward()
         val config = rewardedConfig()
         val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
@@ -238,6 +238,20 @@ class ChartboostFullscreenAdapterTest {
         loadOnTheAdUnit(config)
         adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
         assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `a rewarded ad closed after the SDK reward and a load on the ad unit does not get the Prebid Server reward back`() {
+        // The load lets Prebid grant once more on close. With the bid's reward back in, it would be credited twice.
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
+        val adapter = adapter().also {
+            it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(fakeReward()))))
+        }
+        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
+        loadOnTheAdUnit(config)
+        adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
+        assertEquals(listOf<Reward?>(null), seen)
     }
 
     @Test

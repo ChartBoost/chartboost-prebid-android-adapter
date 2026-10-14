@@ -57,7 +57,8 @@ internal class ChartboostFullscreenAdapter(
     private var ad: Ad? = null
     private var adFormat: ChartboostAdFormat = ChartboostAdFormat.INTERSTITIAL
 
-    // Rewarded only: the ad unit's RewardManager and the reward of this ad's bid. See withBidReward().
+    // Rewarded only: the ad unit's RewardManager and the reward of this ad's bid, until a grant uses it. See
+    // withBidReward().
     private var rewardManager: RewardManager? = null
     private var bidReward: RewardedExt? = null
 
@@ -176,11 +177,10 @@ internal class ChartboostFullscreenAdapter(
     }
 
     /**
-     * Prebid reads the reward from the ad unit's RewardManager when it grants it. A loadAd() on the ad unit
-     * clears that manager, and Prebid allows one once this ad reports displayed, so the app can load the next
-     * ad while this one is still on screen. Put this bid's reward back for the call, then give the manager
-     * back to that newer load, unless a load during the call replaced it. On close, Prebid calls the app's
-     * onAdClosed before it reads the reward, so a load from that callback still clears it first.
+     * Prebid reads the reward from the ad unit's RewardManager when it grants it, and any loadAd() on the ad
+     * unit clears that manager, even one the app makes while this ad is still on screen. Put this bid's reward
+     * back for the call, then give the manager back to the newer load, unless a load during the call replaced
+     * it. Only the first call gets the bid's reward, since Prebid can grant on both the reward and the close.
      */
     private fun withBidReward(notifyPrebid: () -> Unit) {
         val manager = rewardManager
@@ -189,6 +189,7 @@ internal class ChartboostFullscreenAdapter(
             notifyPrebid()
             return
         }
+        bidReward = null
         val newer = manager.rewardedExt
         manager.rewardedExt = reward
         notifyPrebid()
