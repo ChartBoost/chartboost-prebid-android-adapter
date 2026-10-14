@@ -27,6 +27,8 @@ import org.prebid.mobile.api.rendering.PrebidMobileInterstitialControllerInterfa
 import org.prebid.mobile.configuration.AdUnitConfiguration
 import org.prebid.mobile.rendering.bidding.data.bid.BidResponse
 import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerListener
+import org.prebid.mobile.rendering.interstitial.rewarded.RewardManager
+import org.prebid.mobile.rendering.interstitial.rewarded.RewardedExt
 
 /**
  * Interstitial and rewarded controller, plus the bridge from Chartboost callbacks to
@@ -55,6 +57,11 @@ internal class ChartboostFullscreenAdapter(
     private var ad: Ad? = null
     private var adFormat: ChartboostAdFormat = ChartboostAdFormat.INTERSTITIAL
 
+    // Rewarded only: the ad unit's RewardManager and the reward of this ad's bid, until a grant uses it. See
+    // withBidReward().
+    private var rewardManager: RewardManager? = null
+    private var bidReward: RewardedExt? = null
+
     override fun loadAd(adUnitConfiguration: AdUnitConfiguration, bidResponse: BidResponse) {
         val context = this.context
         if (context == null) {
@@ -64,10 +71,17 @@ internal class ChartboostFullscreenAdapter(
             return
         }
         adFormat = if (adUnitConfiguration.isRewarded) ChartboostAdFormat.REWARDED else ChartboostAdFormat.INTERSTITIAL
-        val adm = bidResponse.winningBid?.admOrNull
-        if (adm == null) {
+        val winningBid = bidResponse.winningBid
+        val adm = winningBid?.admOrNull
+        if (winningBid == null || adm == null) {
             mainThread.execute { reportLoadFailed(ChartboostErrorMapper.admInvalid()) }
             return
+        }
+        if (adUnitConfiguration.isRewarded) {
+            // Like Prebid's own renderer, give the ad unit the reward Prebid Server set on the bid. Prebid
+            // reads it whenever it grants the reward.
+            bidReward = winningBid.rewardedExt
+            rewardManager = adUnitConfiguration.rewardManager.also { it.rewardedExt = winningBid.rewardedExt }
         }
 
         val mediation = MediationFactory.create()
@@ -151,13 +165,34 @@ internal class ChartboostFullscreenAdapter(
     }
 
     override fun onAdDismiss(event: DismissEvent) = mainThread.execute {
-        listener.onInterstitialClosed()
+        // Prebid grants the reward on close as well.
+        withBidReward { listener.onInterstitialClosed() }
         eventListener?.onAdDismissed(adFormat)
     }
 
     override fun onRewardEarned(event: RewardEvent) = mainThread.execute {
-        listener.onUserEarnedReward()
+        withBidReward { listener.onUserEarnedReward() }
         eventListener?.onUserEarnedReward(adFormat)
+    }
+
+    /**
+     * Prebid reads the reward from the ad unit's RewardManager when it grants it, and any loadAd() on the ad
+     * unit clears that manager, even one the app makes while this ad is still on screen. Put this bid's reward
+     * back for the call, then give the manager back to the newer load, unless a load during the call replaced
+     * it. Only the first call gets the bid's reward, since Prebid can grant on both the reward and the close.
+     */
+    private fun withBidReward(notifyPrebid: () -> Unit) {
+        val manager = rewardManager
+        val reward = bidReward
+        if (manager == null || reward == null) {
+            notifyPrebid()
+            return
+        }
+        bidReward = null
+        val newer = manager.rewardedExt
+        manager.rewardedExt = reward
+        notifyPrebid()
+        if (manager.rewardedExt === reward) manager.rewardedExt = newer
     }
 
     override fun onAdExpired(event: ExpirationEvent) = mainThread.execute {
