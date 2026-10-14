@@ -84,7 +84,7 @@ dependencies {
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("io.mockk:mockk:1.13.13")
-    testImplementation("org.robolectric:robolectric:4.14.1")
+    testImplementation("org.robolectric:robolectric:4.17")
     testImplementation("androidx.test:core:1.6.1")
 }
 
