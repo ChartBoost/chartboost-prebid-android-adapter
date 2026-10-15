@@ -24,6 +24,7 @@ import io.mockk.mockk
 import io.mockk.mockkStatic
 import io.mockk.unmockkStatic
 import io.mockk.verify
+import io.mockk.verifyOrder
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -249,21 +250,66 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
-    fun `a second show while the first is still on screen reports nothing`() {
+    fun `a second show while the first is opening does not reach the SDK`() {
         val adapter = readyAdapter()
         adapter.show()
         adapter.show()
+        assertEquals(1, showCount())
+    }
+
+    @Test
+    fun `a second show while the ad is on screen does not reach the SDK`() {
+        displayedAdapter().show()
+        assertEquals(1, showCount())
+    }
+
+    @Test
+    fun `a show already on screen reported by the SDK keeps the ad`() {
+        readyAdapter().show()
         factory.completeShow(ChartboostError.Show.FullscreenAlreadyShowing)
         verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
         verify(exactly = 0) { ad.destroy() }
     }
 
     @Test
-    fun `a show failure after display reports nothing`() {
-        val adapter = displayedAdapter()
+    fun `a show the SDK refuses as not started keeps the ad so show can be retried`() {
+        val adapter = readyAdapter()
         adapter.show()
+        factory.completeShow(ChartboostError.Show.NotInitialized)
+        adapter.show()
+        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
+        verify(exactly = 0) { ad.destroy() }
+        assertEquals(2, showCount())
+    }
+
+    @Test
+    fun `a show refused because Chartboost turned the app off uses up the ad`() {
+        // The ad could not show until it expired, so the ad unit is reset and the publisher can move on.
+        readyAdapter().show()
+        factory.completeShow(ChartboostError.Show.Disabled)
+        verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
+        verify(exactly = 1) { ad.destroy() }
+    }
+
+    @Test
+    fun `a failure result after display reports nothing`() {
+        displayedAdapter()
         factory.completeShow(usedUpShowError())
         verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
+    }
+
+    @Test
+    fun `a close handled before the show result still reports displayed, before the close`() {
+        // Prebid leaves the ad unit ready, unable to show or load, until it hears displayed.
+        val adapter = readyAdapter()
+        adapter.show()
+        adapter.onAdClosed(ad, null)
+        factory.completeShow()
+        verify(exactly = 1) { listener.onInterstitialDisplayed() }
+        verifyOrder {
+            listener.onInterstitialDisplayed()
+            listener.onInterstitialClosed()
+        }
     }
 
     @Test
@@ -344,6 +390,26 @@ class ChartboostFullscreenAdapterTest {
         adapter.show()
         adapter.destroy()
         factory.completeShow(ChartboostError.Show.NoContext)
+        verify(exactly = 1) { ad.destroy() }
+    }
+
+    @Test
+    fun `a second show then destroy keeps the opening ad until it closes`() {
+        val adapter = readyAdapter()
+        adapter.show()
+        adapter.show()
+        adapter.destroy()
+        verify(exactly = 0) { ad.destroy() }
+        adapter.onAdClosed(ad, null)
+        verify(exactly = 1) { ad.destroy() }
+    }
+
+    @Test
+    fun `destroy after a show the SDK refused releases the ad at once`() {
+        val adapter = readyAdapter()
+        adapter.show()
+        factory.completeShow(ChartboostError.Show.NoContext)
+        adapter.destroy()
         verify(exactly = 1) { ad.destroy() }
     }
 

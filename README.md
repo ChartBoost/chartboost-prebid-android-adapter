@@ -9,7 +9,7 @@ that Chartboost Mediation drives, plugged into Prebid.
 | Component                | Version |
 | ------------------------ | ------- |
 | Prebid Mobile SDK        | 3.4.0+ (see the [CHANGELOG](CHANGELOG.md) for the certified version) |
-| Chartboost Monetization SDK | 9.14.0+ |
+| Chartboost Monetization SDK | 10.0.0+ |
 | Android API              | 21+     |
 | kotlinx-coroutines-android | present at runtime (ships transitively with the Chartboost Monetization SDK) |
 
@@ -21,8 +21,9 @@ Prebid Mobile routes a winning bid to a registered plugin only when all of these
 2. `ext.prebid.meta.rendererName` matches the plugin's `getName()` (`Chartboost-Android-SDK`).
 3. `ext.prebid.meta.rendererVersion` matches the plugin's `getVersion()`, byte for byte.
 
-On a match, the plugin builds a Chartboost `Banner` / `Interstitial` / `Rewarded`, hands it the bid's
-`adm` via `cache()`, and renders. A mismatch on any key falls back to Prebid's own rendering.
+On a match, the plugin loads the bid's `adm` with `BannerAdView.load` or `FullscreenAd.load`, an
+interstitial or rewarded request after the ad unit, and renders. A mismatch on any key falls back to
+Prebid's own rendering.
 
 ## Integration
 
@@ -44,8 +45,8 @@ Then in your app's `build.gradle`, add the adapter plus the SDKs it renders thro
 `compileOnly` against both SDKs, so your app must depend on them directly:
 
 ```groovy
-implementation "com.chartboost:chartboost-prebid-adapter:309.14.0"
-implementation "com.chartboost:chartboost-sdk:9.14.0"
+implementation "com.chartboost:chartboost-prebid-adapter:310.0.0"
+implementation "com.chartboost:chartboost-sdk:10.0.0"
 implementation "org.prebid:prebid-mobile-sdk:3.4.0"
 ```
 
@@ -126,15 +127,15 @@ routing fallback. All callbacks run on the main thread and take a `ChartboostAdF
 
 ## Banner sizes
 
-The Chartboost Monetization SDK renders a banner at one of its own `Banner.BannerSize` dimensions and
+The Chartboost Monetization SDK renders a banner at one of its own fixed `BannerSize.Fixed` dimensions and
 nothing else:
 
-| Size | Dimensions | Available from |
-| --- | --- | --- |
-| `STANDARD` | 320x50 | all supported versions |
-| `MEDIUM` | 300x250 | all supported versions |
-| `LEADERBOARD` | 728x90 | all supported versions |
-| `HALFPAGE` | 300x600 | Monetization SDK 9.14.0+ |
+| Size | Dimensions |
+| --- | --- |
+| `STANDARD` | 320x50 |
+| `MEDIUM` | 300x250 |
+| `LEADERBOARD` | 728x90 |
+| `HALFPAGE` | 300x600 |
 
 Given a winning bid's negotiated width and height, this adapter selects the **largest of those sizes that
 fits entirely inside** the requested dimensions. A full-width slot of, say, 412x50 renders `STANDARD`
@@ -179,7 +180,7 @@ describes what it covers.
 
 `BuildConfig.ADAPTER_VERSION` is computed in the root `build.gradle.kts` from the scheme
 `(prebid_sdk_major × 100 + monetization_major).(monetization_minor).(adapter_revision)`,
-using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `309.14.0`). The
+using `chartboostSdkVersion` / `prebidMobileVersion` / `adapterRevision` (currently `310.0.0`). The
 Monetization patch is not encoded, the same as the iOS adapter: the adapter supports every patch of its
 certified Monetization minor, so a Monetization patch release needs no new adapter version. The Prebid
 Server adapter echoes this value back from the request, so the client-registered version and the

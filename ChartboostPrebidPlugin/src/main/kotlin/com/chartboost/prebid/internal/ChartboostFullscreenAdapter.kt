@@ -111,19 +111,24 @@ internal class ChartboostFullscreenAdapter(
             PluginLog.w("fullscreen show() called with no loaded ad (destroyed, expired, or never loaded); ignoring")
             return
         }
+        if (showInProgress) {
+            // One show at a time, so every show result belongs to the show that is opening or on screen.
+            PluginLog.w("fullscreen show() called while the ad is already opening or on screen; ignoring")
+            return
+        }
         showInProgress = true
         ad.show { result -> mainThread.execute { onShowResult(ad, result.error) } }
     }
 
     private fun onShowResult(shown: FullscreenAd, error: ChartboostError?) {
         if (shown !== ad) return
-        if (error == null) {
-            if (displayedLatch.fire()) {
-                listener.onInterstitialDisplayed()
-                eventListener?.onAdDisplayed(adFormat)
-            }
-        } else {
-            reportShowFailed(shown, error)
+        if (error == null) reportDisplayed() else reportShowFailed(shown, error)
+    }
+
+    private fun reportDisplayed() {
+        if (displayedLatch.fire()) {
+            listener.onInterstitialDisplayed()
+            eventListener?.onAdDisplayed(adFormat)
         }
     }
 
@@ -147,6 +152,9 @@ internal class ChartboostFullscreenAdapter(
 
     override fun onAdClosed(ad: FullscreenAd, error: ChartboostError?) = mainThread.execute {
         error?.let { PluginLog.w("fullscreen closed with an error: ${ChartboostErrorMapper.mapShow(it)}") }
+        // The SDK closes only an ad that displayed, and its show result can still be queued behind this close.
+        // Prebid leaves the ad unit ready until it hears displayed, so report it first.
+        reportDisplayed()
         // Prebid grants the reward on close as well.
         withBidReward { listener.onInterstitialClosed() }
         eventListener?.onAdDismissed(adFormat)
@@ -189,16 +197,16 @@ internal class ChartboostFullscreenAdapter(
 
     /**
      * No impression fires on a failed show, which is correct billing. The ad survives a show the SDK rejects
-     * before it starts, so show() can be retried: no usable Activity, this ad's earlier show() still on
-     * screen, the SDK not started, or Chartboost turning the app off. Any other failure uses it up. After
-     * destroy() Prebid has discarded this controller, so a failure is only logged and the ad released.
+     * before it starts, so show() can be retried: no usable Activity, the ad already on screen, or the SDK
+     * not started. Any other failure uses it up, Chartboost turning the app off included, since the ad could
+     * not show until it expired. After destroy() Prebid has discarded this controller, so a failure is only
+     * logged and the ad released.
      */
     private fun reportShowFailed(shown: FullscreenAd, error: ChartboostError) {
-        // The earlier show() of this ad still owns the screen, so it alone clears the in-progress flag.
-        if (error !is ChartboostError.Show.FullscreenAlreadyShowing) showInProgress = false
+        showInProgress = false
         if (destroyed.hasFired || displayedLatch.hasFired || error.leavesAdLoaded) {
             PluginLog.w("fullscreen show failed: ${ChartboostErrorMapper.mapShow(error)}")
-            if (destroyed.hasFired && !showInProgress) releaseAd(shown)
+            if (destroyed.hasFired) releaseAd(shown)
             return
         }
         reportAdGone(ChartboostErrorMapper.showFailed(error))
@@ -207,8 +215,7 @@ internal class ChartboostFullscreenAdapter(
     private val ChartboostError.leavesAdLoaded: Boolean
         get() = this is ChartboostError.Show.NoContext ||
             this is ChartboostError.Show.FullscreenAlreadyShowing ||
-            this is ChartboostError.Show.NotInitialized ||
-            this is ChartboostError.Show.Disabled
+            this is ChartboostError.Show.NotInitialized
 
     /**
      * The SDK no longer has the ad, after an expiry or a failed show. Prebid has no hook for either, so report
