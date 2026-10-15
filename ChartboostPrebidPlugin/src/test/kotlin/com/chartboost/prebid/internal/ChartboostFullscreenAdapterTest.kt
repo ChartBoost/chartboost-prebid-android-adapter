@@ -394,6 +394,17 @@ class ChartboostFullscreenAdapterTest {
     }
 
     @Test
+    fun `a close after a reported show failure does not report displayed`() {
+        // The SDK can time a show out in the same turn the user closes a real impression.
+        val adapter = readyAdapter()
+        adapter.show()
+        factory.completeShow(ChartboostError.Show.TimedOut("show timed out"))
+        adapter.onAdClosed(ad, null)
+        verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
+        verify(exactly = 0) { listener.onInterstitialDisplayed() }
+    }
+
+    @Test
     fun `a second show then destroy keeps the opening ad until it closes`() {
         val adapter = readyAdapter()
         adapter.show()

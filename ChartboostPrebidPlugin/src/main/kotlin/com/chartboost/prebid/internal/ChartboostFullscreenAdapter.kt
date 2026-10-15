@@ -153,8 +153,9 @@ internal class ChartboostFullscreenAdapter(
     override fun onAdClosed(ad: FullscreenAd, error: ChartboostError?) = mainThread.execute {
         error?.let { PluginLog.w("fullscreen closed with an error: ${ChartboostErrorMapper.mapShow(it)}") }
         // The SDK closes only an ad that displayed, and its show result can still be queued behind this close.
-        // Prebid leaves the ad unit ready until it hears displayed, so report it first.
-        reportDisplayed()
+        // Prebid leaves the ad unit ready until it hears displayed, so report it first. Not after a reported
+        // failure: Prebid has reset the ad unit, and displayed would undo a reload the publisher started.
+        if (!failedLatch.hasFired) reportDisplayed()
         // Prebid grants the reward on close as well.
         withBidReward { listener.onInterstitialClosed() }
         eventListener?.onAdDismissed(adFormat)
