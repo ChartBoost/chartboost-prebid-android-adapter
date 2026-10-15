@@ -11,10 +11,16 @@ import androidx.test.core.app.ApplicationProvider
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
+import com.chartboost.prebid.internal.MediationFactory
 import com.chartboost.prebid.internal.PREBID_LOCATION
+import com.chartboost.sdk.Chartboost
+import com.chartboost.sdk.ads.BidTokenRequest
 import com.chartboost.sdk.ads.BannerSize
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.mockkStatic
+import io.mockk.slot
+import io.mockk.unmockkStatic
 import io.mockk.verify
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -57,6 +63,25 @@ class ChartboostPrebidPluginAdapterTest {
     @Test
     fun `data omits the token and does not throw when it is unavailable`() {
         assertFalse(adapterWithToken(null).getData()?.has("bidderToken") ?: true)
+    }
+
+    @Test
+    fun `the bid token request names the Prebid mediation and no ad format`() {
+        val request = slot<BidTokenRequest>()
+        mockkStatic(Chartboost::class)
+        try {
+            every { Chartboost.fetchBidToken(capture(request)) } returns "token-123"
+            assertEquals("token-123", adapter.getData()?.getString("bidderToken"))
+        } finally {
+            unmockkStatic(Chartboost::class)
+        }
+        val expected = MediationFactory.create()
+        val mediation = request.captured.mediation
+        assertEquals(expected.mediationType, mediation?.mediationType)
+        assertEquals(expected.libraryVersion, mediation?.libraryVersion)
+        assertEquals(expected.adapterVersion, mediation?.adapterVersion)
+        // getData() runs before Prebid knows the format, so the request must not claim one.
+        assertEquals(BidTokenRequest::class.java, request.captured.javaClass)
     }
 
     @Test

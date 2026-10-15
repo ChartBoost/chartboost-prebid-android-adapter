@@ -13,6 +13,7 @@ import com.chartboost.prebid.internal.ChartboostAdFactory
 import com.chartboost.prebid.internal.ChartboostBannerAdapter
 import com.chartboost.prebid.internal.ChartboostFullscreenAdapter
 import com.chartboost.prebid.internal.DefaultChartboostAdFactory
+import com.chartboost.prebid.internal.MediationFactory
 import com.chartboost.prebid.internal.PREBID_LOCATION
 import com.chartboost.prebid.internal.PluginLog
 import com.chartboost.prebid.internal.hasUsableBannerSize
@@ -39,8 +40,9 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  */
 internal class ChartboostPrebidPluginAdapter(
     private val factory: ChartboostAdFactory,
-    // A plain BidTokenRequest: getData() runs before the format is known, so the token leaves ad_type out.
-    private val bidderToken: () -> String? = { Chartboost.fetchBidToken(BidTokenRequest()) },
+    // A plain BidTokenRequest: getData() runs before the format is known, so the token leaves ad_type out. The
+    // Prebid mediation names the token's traffic the same way every plugin-rendered ad load does.
+    private val bidderToken: () -> String? = { Chartboost.fetchBidToken(BidTokenRequest(mediation = MediationFactory.create())) },
     private val config: ChartboostPrebidConfig = ChartboostPrebidConfig(),
 ) : PrebidMobilePluginRenderer {
 
