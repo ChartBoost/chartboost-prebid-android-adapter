@@ -17,6 +17,7 @@ import com.chartboost.prebid.internal.PREBID_LOCATION
 import com.chartboost.prebid.internal.PluginLog
 import com.chartboost.prebid.internal.hasUsableBannerSize
 import com.chartboost.sdk.Chartboost
+import com.chartboost.sdk.ads.BidTokenRequest
 import org.json.JSONObject
 import org.prebid.mobile.AdSize
 import org.prebid.mobile.api.data.AdFormat
@@ -38,7 +39,8 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
  */
 internal class ChartboostPrebidPluginAdapter(
     private val factory: ChartboostAdFactory,
-    private val bidderToken: () -> String? = { Chartboost.getBidderToken() },
+    // A plain BidTokenRequest: getData() runs before the format is known, so the token leaves ad_type out.
+    private val bidderToken: () -> String? = { Chartboost.fetchBidToken(BidTokenRequest()) },
     private val config: ChartboostPrebidConfig = ChartboostPrebidConfig(),
 ) : PrebidMobilePluginRenderer {
 
@@ -106,7 +108,6 @@ internal class ChartboostPrebidPluginAdapter(
     ): PrebidMobileInterstitialControllerInterface {
         PluginLog.i("Chartboost plugin won routing for a fullscreen ad; rendering via the Monetization SDK")
         return ChartboostFullscreenAdapter(
-            context,
             interstitialControllerListener,
             factory,
             location = resolvedLocation(),

@@ -18,18 +18,10 @@ import com.chartboost.prebid.ChartboostPrebidEventListener
 import com.chartboost.prebid.ChartboostPrebidPluginAdapter
 import com.chartboost.prebid.LogLevel
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
-import com.chartboost.prebid.fakes.cacheError
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
-import com.chartboost.prebid.fakes.showError
-import com.chartboost.sdk.ads.Banner
-import com.chartboost.sdk.events.CacheError
-import com.chartboost.sdk.events.CacheEvent
-import com.chartboost.sdk.events.ClickEvent
-import com.chartboost.sdk.events.ExpirationEvent
-import com.chartboost.sdk.events.ImpressionEvent
-import com.chartboost.sdk.events.ShowError
-import com.chartboost.sdk.events.ShowEvent
+import com.chartboost.sdk.ads.BannerSize
+import com.chartboost.sdk.events.ChartboostError
 import com.google.android.gms.ads.AdView
 import io.mockk.every
 import io.mockk.mockk
@@ -37,6 +29,7 @@ import io.mockk.verify
 import java.time.Duration
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -107,6 +100,12 @@ class ChartboostBannerAdapterTest {
         adUnitFallbackSize = adUnitFallbackSize,
     )
 
+    /** An adapter whose banner load succeeded, so the SDK banner is its child. */
+    private fun loadedAdapter(eventListener: ChartboostPrebidEventListener? = null) =
+        adapter(eventListener = eventListener).also { factory.completeBanner() }
+
+    private val bannerAdView get() = factory.bannerAdView
+
     private fun adapterWithScheduler(scheduler: TeardownScheduler): ChartboostBannerAdapter =
         ChartboostBannerAdapter(
             context, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() },
@@ -127,10 +126,11 @@ class ChartboostBannerAdapterTest {
         // The real window attachment below runs a genuine measure/layout pass, which reads the mocked
         // banner's layoutParams; the class-level stub returns null (only so ViewGroup.addView accepts it),
         // so give it real params here for the one scenario that actually measures the tree.
-        every { factory.banner.layoutParams } returns FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
+        every { factory.bannerAdView.layoutParams } returns FrameLayout.LayoutParams(FrameLayout.LayoutParams.WRAP_CONTENT, FrameLayout.LayoutParams.WRAP_CONTENT)
         val activityController = Robolectric.buildActivity(Activity::class.java).setup()
         val activity = activityController.get()
         val adapter = ChartboostBannerAdapter(activity, listener, fakeBidResponse(fakeBid()), factory, MainThreadExecutor { it() })
+        factory.completeBanner()
         val displayContainer = FrameLayout(activity).apply { addView(adapter) }
         val hostView = host(activity).apply { addView(displayContainer) }
         val content = activity.findViewById<ViewGroup>(android.R.id.content)
@@ -140,13 +140,15 @@ class ChartboostBannerAdapterTest {
 
     private fun idleFor(duration: Duration) = shadowOf(Looper.getMainLooper()).idleFor(duration)
 
+    // region teardown
+
     @Test
     fun `a banner parked under a BannerView for longer than the delay keeps its ad when re-attached`() {
         val screen = screen { BannerView(it, CONFIG_ID, BANNER_AD_SIZE) }
         screen.content.removeView(screen.host)
         idleFor(LONG_DETACH)
         screen.content.addView(screen.host)
-        verify(exactly = 0) { factory.banner.detach() }
+        verify(exactly = 0) { bannerAdView.destroy() }
     }
 
     @Test
@@ -155,7 +157,7 @@ class ChartboostBannerAdapterTest {
         val screen = screen { BannerView(it, CONFIG_ID, BANNER_AD_SIZE) }
         screen.host.removeView(screen.displayContainer)
         idleFor(TEARDOWN_DELAY)
-        verify(exactly = 1) { factory.banner.detach() }
+        verify(exactly = 1) { bannerAdView.destroy() }
     }
 
     @Test
@@ -163,7 +165,7 @@ class ChartboostBannerAdapterTest {
         val screen = screen { AdView(it) }
         screen.content.removeView(screen.host)
         idleFor(LONG_DETACH)
-        verify(exactly = 0) { factory.banner.detach() }
+        verify(exactly = 0) { bannerAdView.destroy() }
     }
 
     @Test
@@ -171,7 +173,7 @@ class ChartboostBannerAdapterTest {
         val screen = screen { AdView(it) }
         screen.host.removeView(screen.displayContainer)
         idleFor(TEARDOWN_DELAY)
-        verify(exactly = 1) { factory.banner.detach() }
+        verify(exactly = 1) { bannerAdView.destroy() }
     }
 
     @Test
@@ -179,7 +181,7 @@ class ChartboostBannerAdapterTest {
         val screen = screen { MaxAdView(it) }
         screen.content.removeView(screen.host)
         idleFor(LONG_DETACH)
-        verify(exactly = 0) { factory.banner.detach() }
+        verify(exactly = 0) { bannerAdView.destroy() }
     }
 
     @Test
@@ -188,7 +190,7 @@ class ChartboostBannerAdapterTest {
         screen.activityController.get().finish()
         screen.content.removeView(screen.host)
         idleFor(TEARDOWN_DELAY)
-        verify(exactly = 1) { factory.banner.detach() }
+        verify(exactly = 1) { bannerAdView.destroy() }
     }
 
     @Test
@@ -197,7 +199,7 @@ class ChartboostBannerAdapterTest {
         screen.content.removeView(screen.host)
         screen.activityController.pause().stop().destroy()
         idleFor(TEARDOWN_DELAY)
-        verify(exactly = 1) { factory.banner.detach() }
+        verify(exactly = 1) { bannerAdView.destroy() }
     }
 
     @Test
@@ -205,17 +207,18 @@ class ChartboostBannerAdapterTest {
         val screen = screen { FrameLayout(it) }
         screen.content.removeView(screen.host)
         idleFor(TEARDOWN_DELAY)
-        verify(exactly = 1) { factory.banner.detach() }
+        verify(exactly = 1) { bannerAdView.destroy() }
     }
 
     @Test
     fun `a re-attach before the delay cancels the pending teardown`() {
         val scheduler = FakeTeardownScheduler()
         val adapter = adapterWithScheduler(scheduler)
+        factory.completeBanner()
         adapter.onDetachedFromWindow()
         adapter.onAttachedToWindow()
         scheduler.runPending()
-        verify(exactly = 0) { factory.banner.detach() }
+        verify(exactly = 0) { bannerAdView.destroy() }
     }
 
     @Test
@@ -249,9 +252,8 @@ class ChartboostBannerAdapterTest {
 
     @Test
     fun `destroy tears down the SDK banner`() {
-        val adapter = adapter()
-        adapter.destroy()
-        verify(exactly = 1) { factory.banner.detach() }
+        loadedAdapter().destroy()
+        verify(exactly = 1) { bannerAdView.destroy() }
     }
 
     @Test
@@ -271,9 +273,12 @@ class ChartboostBannerAdapterTest {
         val addedByThisTest = !registry.containsPlugin(plugin.getName())
         registry.registerPlugin(plugin)
         try {
-            DisplayView(context, listener, bannerConfig, bidResponse).destroy()
-            shadowOf(Looper.getMainLooper()).idle() // the plugin's default executor posts the SDK teardown
-            verify(exactly = 1) { factory.banner.detach() }
+            val displayView = DisplayView(context, listener, bannerConfig, bidResponse)
+            factory.completeBanner()
+            shadowOf(Looper.getMainLooper()).idle() // the plugin's default executor posts the load result
+            displayView.destroy()
+            shadowOf(Looper.getMainLooper()).idle() // and the SDK teardown
+            verify(exactly = 1) { bannerAdView.destroy() }
         } finally {
             if (addedByThisTest) registry.unregisterPlugin(plugin)
         }
@@ -281,23 +286,26 @@ class ChartboostBannerAdapterTest {
 
     @Test
     fun `a second destroy does nothing`() {
-        val adapter = adapter()
+        val adapter = loadedAdapter()
         adapter.destroy()
         adapter.destroy()
-        verify(exactly = 1) { factory.banner.detach() }
+        verify(exactly = 1) { bannerAdView.destroy() }
     }
+
+    // endregion
+
+    // region load
 
     @Test
     fun `reports failure through the listener when the markup is empty`() {
         adapter(bid = fakeBid(adm = null))
         verify { listener.onAdFailed(any()) }
-        assertEquals(null, factory.lastBannerSize) // no banner was created
+        assertNull(factory.lastBannerRequest) // no banner load was started
     }
 
     @Test
-    fun `reports failure instead of crashing when banner construction throws`() {
-        // Constructing a Chartboost Banner throws when the Monetization SDK was never started; it must
-        // surface through the delegate, never escape createBannerAdView.
+    fun `reports failure instead of crashing when the banner load throws`() {
+        // A load must surface its failure through the delegate, never escape createBannerAdView.
         val throwing = FakeChartboostAdFactory(failCreation = IllegalStateException("Chartboost SDK is not initialized"))
         ChartboostBannerAdapter(
             context, listener, fakeBidResponse(fakeBid(adm = "<adm>")), throwing, MainThreadExecutor { it() },
@@ -306,10 +314,11 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
-    fun `caches the markup with the mapped size on construction`() {
+    fun `loads the markup with the mapped size on construction`() {
         adapter(bid = fakeBid(adm = "<adm>", width = 300, height = 250))
-        verify { factory.banner.cache("<adm>") }
-        assertEquals(Banner.BannerSize.MEDIUM, factory.lastBannerSize)
+        assertEquals("<adm>", factory.lastBannerRequest?.adm)
+        assertEquals(BannerSize.Fixed.MEDIUM, factory.lastBannerSize)
+        assertEquals(PREBID_LOCATION, factory.lastBannerRequest?.adUnit)
     }
 
     @Test
@@ -321,34 +330,34 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
-    fun `creates no banner when no Chartboost size fits the negotiated slot`() {
+    fun `starts no banner load when no Chartboost size fits the negotiated slot`() {
         adapter(bid = fakeBid(adm = "<adm>", width = 250, height = 250))
-        assertEquals(null, factory.lastBannerSize)
+        assertNull(factory.lastBannerRequest)
     }
 
     @Test
     fun `fills a full-width slot with the largest size that fits`() {
         adapter(bid = fakeBid(adm = "<adm>", width = 412, height = 50))
-        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+        assertEquals(BannerSize.Fixed.STANDARD, factory.lastBannerSize)
     }
 
     @Test
     fun `bid with no size and a single 300x250 ad unit renders MEDIUM`() {
         adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = AdSize(300, 250))
-        assertEquals(Banner.BannerSize.MEDIUM, factory.lastBannerSize)
+        assertEquals(BannerSize.Fixed.MEDIUM, factory.lastBannerSize)
     }
 
     @Test
     fun `bid with no size and a 320x50 ad unit renders STANDARD`() {
         adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = AdSize(320, 50))
-        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+        assertEquals(BannerSize.Fixed.STANDARD, factory.lastBannerSize)
     }
 
     @Test
     fun `bid with width but no height falls back to the ad unit size`() {
         // The 320x0 case: width alone is not "usable", so this must fall back exactly like 0x0 does.
         adapter(bid = fakeBid(adm = "<adm>", width = 320, height = 0), adUnitFallbackSize = AdSize(320, 50))
-        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+        assertEquals(BannerSize.Fixed.STANDARD, factory.lastBannerSize)
     }
 
     @Test
@@ -356,7 +365,7 @@ class ChartboostBannerAdapterTest {
         // The bid already fits STANDARD on its own; a mismatched ad unit fallback (MEDIUM's slot) must
         // never override a size the bid can already satisfy.
         adapter(bid = fakeBid(adm = "<adm>", width = 320, height = 50), adUnitFallbackSize = AdSize(300, 250))
-        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+        assertEquals(BannerSize.Fixed.STANDARD, factory.lastBannerSize)
     }
 
     @Test
@@ -377,48 +386,62 @@ class ChartboostBannerAdapterTest {
     fun `ad unit with no sizes at all is still a no-fill through unsupportedBannerSize`() {
         adapter(bid = fakeBid(adm = "<adm>", width = 0, height = 0), adUnitFallbackSize = null)
         verify { listener.onAdFailed(any()) }
-        assertNull(factory.lastBannerSize)
+        assertNull(factory.lastBannerRequest)
     }
 
     @Test
-    fun `banner creation attaches the Prebid mediation object`() {
+    fun `the banner load attaches the Prebid mediation object`() {
         adapter(bid = fakeBid(adm = "<adm>"))
         val expected = MediationFactory.create()
-        assertEquals(expected.mediationType, factory.lastMediation?.mediationType)
-        assertEquals(expected.libraryVersion, factory.lastMediation?.libraryVersion)
-        assertEquals(expected.adapterVersion, factory.lastMediation?.adapterVersion)
+        val mediation = factory.lastBannerRequest?.mediation
+        assertEquals(expected.mediationType, mediation?.mediationType)
+        assertEquals(expected.libraryVersion, mediation?.libraryVersion)
+        assertEquals(expected.adapterVersion, mediation?.adapterVersion)
     }
 
     @Test
-    fun `cache success reports loaded then shows inline`() {
-        val adapter = adapter()
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
-        verify { listener.onAdLoaded() }
-        verify { factory.banner.show() }
-    }
-
-    @Test
-    fun `reports loaded only once`() {
-        val adapter = adapter()
-        val event = mockk<CacheEvent>(relaxed = true)
-        adapter.onAdLoaded(event, null)
-        adapter.onAdLoaded(event, null)
+    fun `load success reports loaded and adds the banner, which renders itself`() {
+        val adapter = loadedAdapter()
         verify(exactly = 1) { listener.onAdLoaded() }
+        assertSame(bannerAdView, adapter.getChildAt(0))
+        verify { bannerAdView.callback = adapter }
     }
 
     @Test
-    fun `cache failure reports failure and never shows`() {
+    fun `load failure reports failure and adds no banner`() {
         val adapter = adapter()
-        adapter.onAdLoaded(mockk(relaxed = true), cacheError(CacheError.Code.NO_AD_FOUND))
+        factory.completeBanner(ChartboostError.Load.NoAd)
         verify { listener.onAdFailed(any()) }
-        verify(exactly = 0) { factory.banner.show() }
+        verify(exactly = 0) { listener.onAdLoaded() }
+        assertEquals(0, adapter.childCount)
     }
 
     @Test
-    fun `event listener is notified of load on cache success`() {
+    fun `a load that finishes after destroy releases the banner and reports nothing`() {
+        val adapter = adapter()
+        adapter.destroy()
+        factory.completeBanner()
+        verify(exactly = 0) { listener.onAdLoaded() }
+        verify(exactly = 1) { bannerAdView.destroy() }
+        assertEquals(0, adapter.childCount)
+    }
+
+    @Test
+    fun `a load that fails after destroy reports nothing`() {
+        val adapter = adapter()
+        adapter.destroy()
+        factory.completeBanner(ChartboostError.Load.NoAd)
+        verify(exactly = 0) { listener.onAdFailed(any()) }
+    }
+
+    // endregion
+
+    // region events
+
+    @Test
+    fun `event listener is notified of load on load success`() {
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events)
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
+        loadedAdapter(eventListener = events)
         verify { events.onAdLoaded(ChartboostAdFormat.BANNER) }
     }
 
@@ -432,111 +455,79 @@ class ChartboostBannerAdapterTest {
     @Test
     fun `event listener is notified of display on the first impression`() {
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events)
-        adapter.onImpressionRecorded(mockk<ImpressionEvent>(relaxed = true))
+        loadedAdapter(eventListener = events).onImpressionRecorded(bannerAdView)
         verify { events.onAdDisplayed(ChartboostAdFormat.BANNER) }
     }
 
     @Test
     fun `event listener is notified of click`() {
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events)
-        adapter.onAdClicked(mockk<ClickEvent>(relaxed = true), null)
+        loadedAdapter(eventListener = events).onAdClicked(bannerAdView)
         verify { events.onAdClicked(ChartboostAdFormat.BANNER) }
     }
 
     @Test
-    fun `late cache success after a prior failure does not call onAdLoaded`() {
-        // Regression: before the guard, a success callback arriving after a failure would still fire
-        // onAdLoaded because only loadedLatch gated it. The fix checks !failedLatch.hasFired first,
-        // mirroring the fullscreen adapter's identical guard.
-        val adapter = adapter()
-        val event = mockk<CacheEvent>(relaxed = true)
-        adapter.onAdLoaded(event, cacheError(CacheError.Code.NO_AD_FOUND)) // failure fires first
-        adapter.onAdLoaded(event, null) // late success — must be suppressed
-        verify(exactly = 0) { listener.onAdLoaded() }
-        verify(exactly = 1) { listener.onAdFailed(any()) }
-    }
-
-    @Test
-    fun `repeated cache errors report failure only once`() {
-        val adapter = adapter()
-        adapter.onAdLoaded(mockk(relaxed = true), cacheError(CacheError.Code.NO_AD_FOUND))
-        adapter.onAdLoaded(mockk(relaxed = true), cacheError(CacheError.Code.NO_AD_FOUND))
-        verify(exactly = 1) { listener.onAdFailed(any()) }
-    }
-
-    @Test
     fun `impression reports displayed`() {
-        val adapter = adapter()
-        adapter.onImpressionRecorded(mockk<ImpressionEvent>(relaxed = true))
+        loadedAdapter().onImpressionRecorded(bannerAdView)
         verify { listener.onAdDisplayed() }
     }
 
     @Test
     fun `repeated impressions report displayed only once`() {
-        val adapter = adapter()
-        val event = mockk<ImpressionEvent>(relaxed = true)
-        adapter.onImpressionRecorded(event)
-        adapter.onImpressionRecorded(event)
+        val adapter = loadedAdapter()
+        adapter.onImpressionRecorded(bannerAdView)
+        adapter.onImpressionRecorded(bannerAdView)
         verify(exactly = 1) { listener.onAdDisplayed() }
+    }
+
+    @Test
+    fun `click reports clicked`() {
+        loadedAdapter().onAdClicked(bannerAdView)
+        verify { listener.onAdClicked() }
+    }
+
+    @Test
+    fun `will appear, modal and app left reach no Prebid listener`() {
+        // Prebid's DisplayViewListener has no matching events, so these are only logged.
+        val adapter = loadedAdapter()
+        adapter.onAdWillAppear(bannerAdView)
+        adapter.onModalPresented(bannerAdView)
+        adapter.onModalDismissed(bannerAdView)
+        adapter.onAppLeft(bannerAdView)
+        verify(exactly = 0) { listener.onAdDisplayed() }
+        verify(exactly = 0) { listener.onAdClicked() }
+        verify(exactly = 0) { listener.onAdFailed(any()) }
     }
 
     @Test
     fun `expiry never reports failure`() {
         // Banner expiry is a pure no-op by design (unlike the fullscreen path, which surfaces expiry as
-        // a reload signal). Exercise it before any load so loadedLatch is unset: wiring expiry to
+        // a reload signal). Exercise it before the load result so loadedLatch is unset: wiring expiry to
         // reportFailed would then actually fire onAdFailed and fail this test. Testing after load would be
         // masked by reportFailed's !loadedLatch.hasFired guard.
-        val adapter = adapter()
-        adapter.onAdExpired(mockk<ExpirationEvent>(relaxed = true))
+        adapter().onAdExpired(bannerAdView)
         verify(exactly = 0) { listener.onAdFailed(any()) }
-    }
-
-    @Test
-    fun `show failure after load logs only and never re-signals onAdFailed`() {
-        // Prebid has no terminal show-failed signal for banners, so a ShowError arriving after onAdLoaded
-        // already reported success must be logged only, never re-signaled as onAdFailed.
-        val adapter = adapter()
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.NO_CACHED_AD))
-        verify(exactly = 1) { listener.onAdLoaded() }
-        verify(exactly = 0) { listener.onAdFailed(any()) }
-    }
-
-    @Test
-    fun `late cache failure after load does not report failed`() {
-        val adapter = adapter()
-        val event = mockk<CacheEvent>(relaxed = true)
-        adapter.onAdLoaded(event, null) // loaded
-        adapter.onAdLoaded(event, cacheError(CacheError.Code.NO_AD_FOUND)) // late cache error
-        verify(exactly = 0) { listener.onAdFailed(any()) }
-        verify(exactly = 1) { listener.onAdLoaded() }
-    }
-
-    @Test
-    fun `a load callback after destroy is dropped`() {
-        val adapter = adapter()
-        adapter.destroy()
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
-        verify(exactly = 0) { listener.onAdLoaded() }
     }
 
     @Test
     fun `a click after destroy is dropped`() {
-        val adapter = adapter()
+        val adapter = loadedAdapter()
         adapter.destroy()
-        adapter.onAdClicked(mockk<ClickEvent>(relaxed = true), null)
+        adapter.onAdClicked(bannerAdView)
         verify(exactly = 0) { listener.onAdClicked() }
     }
 
     @Test
     fun `an impression after destroy is dropped`() {
-        val adapter = adapter()
+        val adapter = loadedAdapter()
         adapter.destroy()
-        adapter.onImpressionRecorded(mockk(relaxed = true))
+        adapter.onImpressionRecorded(bannerAdView)
         verify(exactly = 0) { listener.onAdDisplayed() }
     }
+
+    // endregion
+
+    // region queued main thread
 
     @Test
     fun `a failure posted before destroy is dropped after it`() {
@@ -548,22 +539,25 @@ class ChartboostBannerAdapterTest {
     }
 
     @Test
-    fun `a load callback queued before destroy does not reach the Prebid listener`() {
+    fun `a load result queued before destroy does not reach the Prebid listener`() {
         val mainThread = QueuedMainThread()
         val adapter = queuedAdapter(mainThread)
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null) // queued, not run yet
+        factory.completeBanner() // queued, not run yet
         adapter.destroy()
         mainThread.runAll()
         verify(exactly = 0) { listener.onAdLoaded() }
     }
 
     @Test
-    fun `a load callback queued before destroy does not show the banner`() {
+    fun `a load result queued before destroy releases the banner without adding it`() {
         val mainThread = QueuedMainThread()
         val adapter = queuedAdapter(mainThread)
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null) // queued, not run yet
+        factory.completeBanner() // queued, not run yet
         adapter.destroy()
         mainThread.runAll()
-        verify(exactly = 0) { factory.banner.show() }
+        verify(exactly = 1) { bannerAdView.destroy() }
+        assertEquals(0, adapter.childCount)
     }
+
+    // endregion
 }

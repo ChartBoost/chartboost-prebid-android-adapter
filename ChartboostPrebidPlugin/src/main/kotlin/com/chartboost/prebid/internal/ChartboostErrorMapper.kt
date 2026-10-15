@@ -6,44 +6,42 @@
 
 package com.chartboost.prebid.internal
 
-import com.chartboost.sdk.events.CacheError
-import com.chartboost.sdk.events.ExpirationEvent
-import com.chartboost.sdk.events.ShowError
+import com.chartboost.sdk.events.ChartboostError
 import org.prebid.mobile.api.exceptions.AdException
 
 /**
- * Maps Chartboost cache, show and expiry errors, plus the adapter's own failures, to the Prebid
+ * Maps Chartboost load, show and expiry errors, plus the adapter's own failures, to the Prebid
  * [AdException] the listeners take, or to a log line for a show error that is only logged. The raw
  * Chartboost code stays in the message, since `AdException(type, message)` is the only constructor. An
- * unknown or future code still carries its raw value rather than collapsing into a blanket internal error.
+ * unknown or future error still carries its raw code rather than collapsing into a blanket internal error.
  */
 internal object ChartboostErrorMapper {
 
-    fun map(error: CacheError): AdException {
-        val code = error.code
-        val prefix = when (code) {
-            CacheError.Code.NO_AD_FOUND -> "No fill"
-            CacheError.Code.SESSION_NOT_STARTED -> "Chartboost SDK not started"
-            CacheError.Code.INVALID_ADM -> "Invalid ad markup"
-            else -> "Chartboost cache error"
+    /** A failed load. A null [error] is a load that reported neither an ad nor an error. */
+    fun map(error: ChartboostError?): AdException {
+        val prefix = when (error) {
+            is ChartboostError.Load.NoAd -> "No fill"
+            is ChartboostError.Load.NotInitialized -> "Chartboost SDK not started"
+            is ChartboostError.Load.InvalidAdm -> "Invalid ad markup"
+            else -> "Chartboost load error"
         }
-        return adException("$prefix [CacheError ${code.name}(${code.errorCode})]")
+        return adException("$prefix [${error.describe()}]")
     }
 
-    fun mapShow(error: ShowError): String {
-        val code = error.code
-        val prefix = when (code) {
-            ShowError.Code.SESSION_NOT_STARTED -> "Chartboost SDK not started"
-            ShowError.Code.NO_CACHED_AD -> "No cached ad to show"
-            ShowError.Code.INTERNET_UNAVAILABLE -> "No internet connection"
-            ShowError.Code.AD_EXPIRED -> "Ad expired"
+    fun mapShow(error: ChartboostError): String {
+        val prefix = when (error) {
+            is ChartboostError.Show.NotInitialized -> "Chartboost SDK not started"
+            is ChartboostError.Show.NoAd -> "No loaded ad to show"
+            is ChartboostError.Show.NoContext -> "No usable Activity"
+            is ChartboostError.Show.AdExpired -> "Ad expired"
+            is ChartboostError.Show.FullscreenAlreadyShowing -> "A fullscreen ad is already showing"
             else -> "Chartboost show error"
         }
-        return "$prefix [ShowError ${code.name}(${code.errorCode})]"
+        return "$prefix [${error.describe()}]"
     }
 
-    /** A failed show used up the cached ad; the publisher should reload. */
-    fun showFailed(error: ShowError): AdException = adException(mapShow(error))
+    /** A failed show used up the loaded ad; the publisher should reload. */
+    fun showFailed(error: ChartboostError): AdException = adException(mapShow(error))
 
     fun admInvalid(): AdException = adException("Empty or invalid ADM for a Chartboost-flagged bid")
 
@@ -54,16 +52,17 @@ internal object ChartboostErrorMapper {
                 "(available: ${BannerSizeMapper.supportedSizes()})",
         )
 
-    /** A cached ad expired or was evicted before it could be shown; the publisher should reload. */
-    fun adExpired(event: ExpirationEvent): AdException =
-        adException("Chartboost ad expired before display [reason ${event.reason}]")
+    /** A loaded ad expired before it could be shown; the publisher should reload. */
+    fun adExpired(): AdException = adException("Chartboost ad expired before display")
 
     /**
-     * Constructing a Chartboost ad throws synchronously, e.g. when the Monetization SDK was never started.
-     * Mapping it keeps the failure from escaping the plugin entry points.
+     * Starting a Chartboost load threw synchronously. Mapping it keeps the failure from escaping the plugin
+     * entry points.
      */
     fun adCreationFailed(t: Throwable): AdException =
         adException("Failed to create Chartboost ad: ${t.message ?: t.javaClass.simpleName}")
+
+    private fun ChartboostError?.describe(): String = if (this == null) "no error reported" else "$constant($code)"
 
     private fun adException(message: String): AdException {
         // WARN, not DEBUG: a load failure would otherwise be invisible at the default level, and these

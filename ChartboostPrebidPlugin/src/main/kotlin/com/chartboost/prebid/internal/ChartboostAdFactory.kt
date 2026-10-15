@@ -7,66 +7,54 @@
 package com.chartboost.prebid.internal
 
 import android.content.Context
-import com.chartboost.sdk.Mediation
-import com.chartboost.sdk.ads.Banner
-import com.chartboost.sdk.ads.Interstitial
-import com.chartboost.sdk.ads.Rewarded
-import com.chartboost.sdk.callbacks.BannerCallback
-import com.chartboost.sdk.callbacks.InterstitialCallback
-import com.chartboost.sdk.callbacks.RewardedCallback
+import com.chartboost.sdk.ads.BannerAdLoadRequest
+import com.chartboost.sdk.ads.BannerAdView
+import com.chartboost.sdk.ads.FullscreenAd
+import com.chartboost.sdk.ads.InterstitialAdLoadRequest
+import com.chartboost.sdk.ads.RewardedAdLoadRequest
+import com.chartboost.sdk.events.ChartboostError
+
+/** A load's outcome: the ad, or null with the error that stopped it. */
+internal typealias LoadResult<T> = (ad: T?, error: ChartboostError?) -> Unit
 
 /**
- * The single mocked boundary for tests. Production builds real SDK ads; tests inject fakes that capture
- * the callback and record cache/show/destroy, so the bridge mapping is testable without the SDK.
+ * The single mocked boundary for tests. Production loads real SDK ads; tests inject fakes that record the
+ * request and hand back a mocked ad or an error, so the bridge mapping is testable without the SDK.
  */
 internal interface ChartboostAdFactory {
 
-    fun createBanner(
+    fun loadBanner(
         context: Context,
-        location: String,
-        size: Banner.BannerSize,
-        callback: BannerCallback,
-        mediation: Mediation,
-    ): Banner
+        request: BannerAdLoadRequest,
+        onResult: LoadResult<BannerAdView>,
+    )
 
-    fun createInterstitial(
-        context: Context,
-        location: String,
-        callback: InterstitialCallback,
-        mediation: Mediation,
-    ): Interstitial
+    fun loadInterstitial(
+        request: InterstitialAdLoadRequest,
+        onResult: LoadResult<FullscreenAd>,
+    )
 
-    fun createRewarded(
-        context: Context,
-        location: String,
-        callback: RewardedCallback,
-        mediation: Mediation,
-    ): Rewarded
+    fun loadRewarded(
+        request: RewardedAdLoadRequest,
+        onResult: LoadResult<FullscreenAd>,
+    )
 }
 
 internal class DefaultChartboostAdFactory : ChartboostAdFactory {
 
-    override fun createBanner(
+    override fun loadBanner(
         context: Context,
-        location: String,
-        size: Banner.BannerSize,
-        callback: BannerCallback,
-        mediation: Mediation,
-    ): Banner = Banner(context, location, size, callback, mediation)
+        request: BannerAdLoadRequest,
+        onResult: LoadResult<BannerAdView>,
+    ) = BannerAdView.load(context, request) { result -> onResult(result.ad, result.error) }
 
-    // Interstitial/Rewarded read the global ContextProvider.context, so the passed context is unused;
-    // the factory keeps it for a uniform signature.
-    override fun createInterstitial(
-        context: Context,
-        location: String,
-        callback: InterstitialCallback,
-        mediation: Mediation,
-    ): Interstitial = Interstitial(location, callback, mediation)
+    override fun loadInterstitial(
+        request: InterstitialAdLoadRequest,
+        onResult: LoadResult<FullscreenAd>,
+    ) = FullscreenAd.load(request) { result -> onResult(result.ad, result.error) }
 
-    override fun createRewarded(
-        context: Context,
-        location: String,
-        callback: RewardedCallback,
-        mediation: Mediation,
-    ): Rewarded = Rewarded(location, callback, mediation)
+    override fun loadRewarded(
+        request: RewardedAdLoadRequest,
+        onResult: LoadResult<FullscreenAd>,
+    ) = FullscreenAd.load(request) { result -> onResult(result.ad, result.error) }
 }

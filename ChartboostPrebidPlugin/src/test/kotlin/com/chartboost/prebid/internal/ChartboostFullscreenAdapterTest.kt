@@ -6,27 +6,19 @@
 
 package com.chartboost.prebid.internal
 
-import android.content.Context
 import android.util.Log
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
 import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.LEFTOVER_REWARD_TYPE
 import com.chartboost.prebid.fakes.NEWER_REWARD_TYPE
-import com.chartboost.prebid.fakes.cacheError
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
 import com.chartboost.prebid.fakes.fakeReward
 import com.chartboost.prebid.fakes.fakeRewardedExt
-import com.chartboost.prebid.fakes.showError
-import com.chartboost.sdk.events.CacheError
-import com.chartboost.sdk.events.CacheEvent
-import com.chartboost.sdk.events.ClickEvent
-import com.chartboost.sdk.events.DismissEvent
-import com.chartboost.sdk.events.ExpirationEvent
-import com.chartboost.sdk.events.RewardEvent
-import com.chartboost.sdk.events.ShowError
-import com.chartboost.sdk.events.ShowEvent
+import com.chartboost.prebid.fakes.usedUpShowError
+import com.chartboost.sdk.callbacks.AdShowCallback
+import com.chartboost.sdk.events.ChartboostError
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.mockkStatic
@@ -34,10 +26,8 @@ import io.mockk.unmockkStatic
 import io.mockk.verify
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
-import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.prebid.mobile.configuration.AdUnitConfiguration
 import org.prebid.mobile.rendering.bidding.interfaces.InterstitialControllerListener
@@ -50,28 +40,33 @@ class ChartboostFullscreenAdapterTest {
         unmockkStatic(Log::class)
     }
 
-    private val context = mockk<Context>(relaxed = true)
     private val listener = mockk<InterstitialControllerListener>(relaxed = true)
     private val factory = FakeChartboostAdFactory()
+    private val ad get() = factory.fullscreenAd
 
     private fun adapter(
         eventListener: ChartboostPrebidEventListener? = null,
-    ) = ChartboostFullscreenAdapter(
-        context, listener, factory, MainThreadExecutor { it() }, eventListener = eventListener,
-    )
+    ) = ChartboostFullscreenAdapter(listener, factory, MainThreadExecutor { it() }, eventListener = eventListener)
 
     /** An adapter that has loaded and reported ready for display. */
     private fun readyAdapter(
         eventListener: ChartboostPrebidEventListener? = null,
         rewarded: Boolean = false,
+        config: AdUnitConfiguration = config(rewarded),
+        bid: org.prebid.mobile.rendering.bidding.data.bid.Bid = fakeBid(),
     ) = adapter(eventListener).also {
-        it.loadAd(config(rewarded), fakeBidResponse())
-        it.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
+        it.loadAd(config, fakeBidResponse(bid))
+        factory.completeFullscreen()
     }
 
-    // ExpirationReason lives in the SDK's internal package and cannot be named here; a relaxed mock
-    // supplies the reason the error message interpolates.
-    private fun expirationEvent() = mockk<ExpirationEvent>(relaxed = true)
+    /** An adapter whose ad is on screen: loaded, shown, and the show reported success. */
+    private fun displayedAdapter(eventListener: ChartboostPrebidEventListener? = null) =
+        readyAdapter(eventListener).also {
+            it.show()
+            factory.completeShow()
+        }
+
+    private fun showCount() = factory.showCallbacks.size
 
     private fun config(rewarded: Boolean): AdUnitConfiguration =
         mockk<AdUnitConfiguration>(relaxed = true).also { every { it.isRewarded } returns rewarded }
@@ -89,279 +84,195 @@ class ChartboostFullscreenAdapterTest {
         return seen
     }
 
+    /** A rewarded adapter loaded with a bid carrying [reward], against the shared [config]. */
+    private fun rewardedAdapter(config: AdUnitConfiguration, reward: Reward? = fakeReward()) =
+        readyAdapter(config = config, bid = fakeBid(rewardedExt = fakeRewardedExt(reward)))
+
     /**
      * What `RewardedAdUnit.loadAd()` does to the shared [config], even when Prebid then skips the load. An app
      * can call it while the shown ad is still on screen.
      */
     private fun loadOnTheAdUnit(config: AdUnitConfiguration) = config.rewardManager.clear()
 
+    // region load
+
     @Test
-    fun `loadAd builds an interstitial when the unit is not rewarded`() {
+    fun `loadAd loads an interstitial when the unit is not rewarded`() {
         adapter().loadAd(config(rewarded = false), fakeBidResponse())
-        assertTrue(factory.createdInterstitial)
-        assertFalse(factory.createdRewarded)
+        assertEquals(PREBID_LOCATION, factory.lastInterstitialRequest?.adUnit)
+        assertNull(factory.lastRewardedRequest)
     }
 
     @Test
-    fun `loadAd builds a rewarded ad when the unit is rewarded`() {
+    fun `loadAd loads a rewarded ad when the unit is rewarded`() {
         adapter().loadAd(config(rewarded = true), fakeBidResponse())
-        assertTrue(factory.createdRewarded)
-        assertFalse(factory.createdInterstitial)
+        assertEquals(PREBID_LOCATION, factory.lastRewardedRequest?.adUnit)
+        assertNull(factory.lastInterstitialRequest)
     }
 
     @Test
-    fun `loadAd reports failure instead of crashing when ad construction throws`() {
-        // Constructing the ad throws when the Monetization SDK was never started; loadAd must report it
-        // through the listener, never let it escape.
-        val throwing = FakeChartboostAdFactory(failCreation = IllegalStateException("Chartboost SDK is not initialized"))
-        ChartboostFullscreenAdapter(context, listener, throwing, MainThreadExecutor { it() })
-            .loadAd(config(rewarded = false), fakeBidResponse())
-        verify { listener.onInterstitialFailedToLoad(any()) }
-    }
-
-    @Test
-    fun `loadAd caches the bid markup`() {
+    fun `loadAd loads the bid markup`() {
         adapter().loadAd(config(rewarded = false), fakeBidResponse(fakeBid(adm = "<adm>")))
-        verify { factory.interstitial.cache("<adm>") }
+        assertEquals("<adm>", factory.lastInterstitialRequest?.adm)
     }
 
     @Test
-    fun `loadAd attaches the Prebid mediation object to the created ad`() {
+    fun `loadAd attaches the Prebid mediation object to the request`() {
         adapter().loadAd(config(rewarded = false), fakeBidResponse(fakeBid(adm = "<adm>")))
         val expected = MediationFactory.create()
-        assertEquals(expected.mediationType, factory.lastMediation?.mediationType)
-        assertEquals(expected.libraryVersion, factory.lastMediation?.libraryVersion)
-        assertEquals(expected.adapterVersion, factory.lastMediation?.adapterVersion)
+        val mediation = factory.lastRequest?.mediation
+        assertEquals(expected.mediationType, mediation?.mediationType)
+        assertEquals(expected.libraryVersion, mediation?.libraryVersion)
+        assertEquals(expected.adapterVersion, mediation?.adapterVersion)
+    }
+
+    @Test
+    fun `loadAd reports failure instead of crashing when the load throws`() {
+        val throwing = FakeChartboostAdFactory(failCreation = IllegalStateException("Chartboost SDK is not initialized"))
+        ChartboostFullscreenAdapter(listener, throwing, MainThreadExecutor { it() })
+            .loadAd(config(rewarded = false), fakeBidResponse())
+        verify { listener.onInterstitialFailedToLoad(any()) }
     }
 
     @Test
     fun `loadAd fails through the listener when the markup is empty`() {
         adapter().loadAd(config(rewarded = false), fakeBidResponse(fakeBid(adm = null)))
         verify { listener.onInterstitialFailedToLoad(any()) }
-        assertFalse(factory.createdInterstitial)
+        assertNull(factory.lastInterstitialRequest)
     }
 
     @Test
-    fun `cache success reports ready for display exactly once`() {
-        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
-        val event = mockk<CacheEvent>(relaxed = true)
-        adapter.onAdLoaded(event, null)
-        adapter.onAdLoaded(event, null)
+    fun `a loaded ad reports ready for display and gets the adapter as its callback`() {
+        val adapter = readyAdapter()
         verify(exactly = 1) { listener.onInterstitialReadyForDisplay() }
+        verify { ad.callback = adapter }
     }
 
     @Test
-    fun `cache failure reports failed to load`() {
-        adapter().onAdLoaded(mockk(relaxed = true), cacheError(CacheError.Code.NO_AD_FOUND))
+    fun `a failed load reports failed to load`() {
+        adapter().loadAd(config(rewarded = false), fakeBidResponse())
+        factory.completeFullscreen(ChartboostError.Load.NoAd)
         verify { listener.onInterstitialFailedToLoad(any()) }
+        verify(exactly = 0) { listener.onInterstitialReadyForDisplay() }
+    }
+
+    @Test
+    fun `a load that finishes after destroy releases the ad and reports nothing`() {
+        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+        adapter.destroy()
+        factory.completeFullscreen()
+        verify(exactly = 0) { listener.onInterstitialReadyForDisplay() }
+        verify(exactly = 1) { ad.destroy() }
+    }
+
+    @Test
+    fun `a load that fails after destroy reports nothing`() {
+        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+        adapter.destroy()
+        factory.completeFullscreen(ChartboostError.Load.NoAd)
+        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
+    }
+
+    @Test
+    fun `loadAd after destroy does not load an ad`() {
+        // A late loadAd on a controller Prebid already discarded must be a no-op rather than resurrect it.
+        val adapter = adapter().also { it.destroy() }
+        adapter.loadAd(config(rewarded = false), fakeBidResponse())
+        assertNull(factory.lastInterstitialRequest)
+        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
+    }
+
+    // endregion
+
+    // region show
+
+    @Test
+    fun `show delegates to the loaded ad`() {
+        readyAdapter().show()
+        verify { ad.show(any<AdShowCallback>()) }
     }
 
     @Test
     fun `show success reports displayed`() {
-        adapter().onAdShown(mockk<ShowEvent>(relaxed = true), null)
-        verify { listener.onInterstitialDisplayed() }
+        displayedAdapter()
+        verify(exactly = 1) { listener.onInterstitialDisplayed() }
+    }
+
+    @Test
+    fun `a show success delivered twice reports displayed once`() {
+        val adapter = readyAdapter()
+        adapter.show()
+        factory.completeShow()
+        factory.completeShow()
+        verify(exactly = 1) { listener.onInterstitialDisplayed() }
     }
 
     @Test
     fun `show failure does not report displayed`() {
-        adapter().onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.NO_CACHED_AD))
+        readyAdapter().show()
+        factory.completeShow(usedUpShowError())
         verify(exactly = 0) { listener.onInterstitialDisplayed() }
     }
 
     @Test
     fun `a show failure that uses up the ad reports failed to load so the ad unit can reload`() {
-        val adapter = readyAdapter()
-        every { factory.interstitial.isCached() } returns false
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.INTERNAL))
+        readyAdapter().show()
+        factory.completeShow(usedUpShowError())
         verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
+        verify(exactly = 1) { ad.destroy() }
     }
 
     @Test
     fun `a rewarded show failure that uses up the ad reports failed to load so the ad unit can reload`() {
-        val adapter = readyAdapter(rewarded = true)
-        every { factory.rewarded.isCached() } returns false
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.INTERNAL))
+        readyAdapter(rewarded = true).show()
+        factory.completeShow(usedUpShowError())
         verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
     }
 
     @Test
     fun `a show failure that uses up the ad notifies the event listener of failure`() {
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = readyAdapter(eventListener = events)
-        every { factory.interstitial.isCached() } returns false
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.INTERNAL))
+        readyAdapter(eventListener = events).show()
+        factory.completeShow(usedUpShowError())
         verify { events.onAdFailed(ChartboostAdFormat.INTERSTITIAL, any()) }
     }
 
     @Test
-    fun `a show failure that keeps the ad cached reports nothing so show can be retried`() {
+    fun `a show failure that keeps the ad loaded reports nothing so show can be retried`() {
         val adapter = readyAdapter()
-        every { factory.interstitial.isCached() } returns true
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.NO_CONTEXT))
+        adapter.show()
+        factory.completeShow(ChartboostError.Show.NoContext)
         adapter.show()
         verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
-        verify(exactly = 1) { factory.interstitial.show() }
+        verify(exactly = 0) { ad.destroy() }
+        assertEquals(2, showCount())
     }
 
     @Test
-    fun `a second show while the first is still opening does not report failed to load`() {
-        // The SDK empties its load slot as soon as a show begins. If a second show() reaches the SDK while the
-        // first is opening, it fails with AD_ALREADY_VISIBLE while isCached() is already false.
+    fun `a second show while the first is still on screen reports nothing`() {
         val adapter = readyAdapter()
-        every { factory.interstitial.isCached() } returns false
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.AD_ALREADY_VISIBLE))
+        adapter.show()
+        adapter.show()
+        factory.completeShow(ChartboostError.Show.FullscreenAlreadyShowing)
         verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
+        verify(exactly = 0) { ad.destroy() }
     }
 
     @Test
     fun `a show failure after display reports nothing`() {
-        val adapter = readyAdapter()
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), null)
-        every { factory.interstitial.isCached() } returns false
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.INTERNAL))
+        val adapter = displayedAdapter()
+        adapter.show()
+        factory.completeShow(usedUpShowError())
         verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
     }
 
     @Test
     fun `show after a show failure that used up the ad does not reach the SDK`() {
         val adapter = readyAdapter()
-        every { factory.interstitial.isCached() } returns false
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.INTERNAL))
         adapter.show()
-        verify(exactly = 0) { factory.interstitial.show() }
-    }
-
-    @Test
-    fun `a show failure keeps log-only handling when the SDK no longer has isCached`() {
-        // The SDK is compileOnly, so a newer publisher SDK may have removed the deprecated isCached().
-        val adapter = readyAdapter()
-        every { factory.interstitial.isCached() } throws NoSuchMethodError("isCached")
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.INTERNAL))
-        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
-    }
-
-    @Test
-    fun `a show failure after destroy reports nothing`() {
-        val adapter = readyAdapter()
-        adapter.destroy()
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), showError(ShowError.Code.INTERNAL))
-        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
-    }
-
-    @Test
-    fun `click is forwarded`() {
-        adapter().onAdClicked(mockk<ClickEvent>(relaxed = true), null)
-        verify { listener.onInterstitialClicked() }
-    }
-
-    @Test
-    fun `dismiss is forwarded as closed`() {
-        adapter().onAdDismiss(mockk<DismissEvent>(relaxed = true))
-        verify { listener.onInterstitialClosed() }
-    }
-
-    @Test
-    fun `reward is forwarded as user earned reward`() {
-        adapter().onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        verify { listener.onUserEarnedReward() }
-    }
-
-    @Test
-    fun `a rewarded ad reports the Prebid Server reward of the bid to Prebid`() {
-        val reward = fakeReward()
-        val config = rewardedConfig()
-        val seen = rewardsSeenByPrebid(config) { it.onUserEarnedReward() }
-        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(reward)))) }
-        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        assertEquals(listOf<Reward?>(reward), seen)
-    }
-
-    @Test
-    fun `a rewarded bid without a Prebid Server reward reports no reward`() {
-        val config = rewardedConfig()
-        // A reward left in the manager must not leak into an ad whose bid carries none.
-        config.rewardManager.rewardedExt = fakeRewardedExt(fakeReward(type = LEFTOVER_REWARD_TYPE))
-        val seen = rewardsSeenByPrebid(config) { it.onUserEarnedReward() }
-        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(null)))) }
-        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        assertEquals(listOf<Reward?>(null), seen)
-    }
-
-    @Test
-    fun `a rewarded ad closed before the SDK reward still reports the Prebid Server reward`() {
-        // Prebid grants the reward on close as well, and reads the RewardManager at that moment.
-        val reward = fakeReward()
-        val config = rewardedConfig()
-        val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
-        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(reward)))) }
-        adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
-        assertEquals(listOf<Reward?>(reward), seen)
-    }
-
-    @Test
-    fun `a load on the ad unit while the ad shows still reports the Prebid Server reward of the shown ad`() {
-        val reward = fakeReward()
-        val config = rewardedConfig()
-        val seen = rewardsSeenByPrebid(config) { it.onUserEarnedReward() }
-        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(reward)))) }
-        loadOnTheAdUnit(config)
-        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        assertEquals(listOf<Reward?>(reward), seen)
-    }
-
-    @Test
-    fun `a rewarded ad closed before the SDK reward and after a load on the ad unit still reports the Prebid Server reward`() {
-        val reward = fakeReward()
-        val config = rewardedConfig()
-        val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
-        val adapter = adapter().also { it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(reward)))) }
-        loadOnTheAdUnit(config)
-        adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
-        assertEquals(listOf<Reward?>(reward), seen)
-    }
-
-    @Test
-    fun `a rewarded ad closed after the SDK reward and a load on the ad unit does not get the Prebid Server reward back`() {
-        // The load lets Prebid grant once more on close. With the bid's reward back in, it would be credited twice.
-        val config = rewardedConfig()
-        val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
-        val adapter = adapter().also {
-            it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(fakeReward()))))
-        }
-        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        loadOnTheAdUnit(config)
-        adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
-        assertEquals(listOf<Reward?>(null), seen)
-    }
-
-    @Test
-    fun `granting the reward keeps the reward a newer load put on the ad unit`() {
-        val config = rewardedConfig()
-        val adapter = adapter().also {
-            it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(fakeReward()))))
-        }
-        val newer = fakeRewardedExt(fakeReward(type = NEWER_REWARD_TYPE))
-        config.rewardManager.rewardedExt = newer
-        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        assertSame(newer, config.rewardManager.rewardedExt)
-    }
-
-    @Test
-    fun `a load from inside the reward callback is not undone`() {
-        val config = rewardedConfig()
-        every { listener.onUserEarnedReward() } answers { loadOnTheAdUnit(config) }
-        val adapter = adapter().also {
-            it.loadAd(config, fakeBidResponse(fakeBid(rewardedExt = fakeRewardedExt(fakeReward()))))
-        }
-        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        assertNull(config.rewardManager.rewardedExt.reward)
-    }
-
-    @Test
-    fun `show delegates to the underlying ad`() {
-        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+        factory.completeShow(usedUpShowError())
         adapter.show()
-        verify { factory.interstitial.show() }
+        assertEquals(1, showCount())
     }
 
     @Test
@@ -371,112 +282,258 @@ class ChartboostFullscreenAdapterTest {
 
         adapter().show()
 
-        verify(exactly = 0) { factory.interstitial.show() }
+        assertEquals(0, showCount())
         verify { Log.w(PluginLog.TAG, match<String> { "show() called with no loaded ad" in it }) }
     }
 
     @Test
     fun `show after destroy warns and shows nothing`() {
-        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+        val adapter = readyAdapter()
         adapter.destroy()
         mockkStatic(Log::class)
         every { Log.w(PluginLog.TAG, any<String>()) } returns 0
 
         adapter.show()
 
-        verify(exactly = 0) { factory.interstitial.show() }
+        assertEquals(0, showCount())
         verify { Log.w(PluginLog.TAG, match<String> { "show() called with no loaded ad" in it }) }
     }
 
+    // endregion
+
+    // region destroy
+
     @Test
-    fun `destroy tears the underlying ad down`() {
-        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
+    fun `destroy releases a loaded ad that is not showing`() {
+        readyAdapter().destroy()
+        verify(exactly = 1) { ad.destroy() }
+    }
+
+    @Test
+    fun `destroy while the ad is on screen waits for the close to release it`() {
+        // FullscreenAd.destroy() tears down an ad on screen, which would cut the user's ad short.
+        val adapter = displayedAdapter()
         adapter.destroy()
-        verify { factory.interstitial.clearCache() }
+        verify(exactly = 0) { ad.destroy() }
+        adapter.onAdClosed(ad, null)
+        verify(exactly = 1) { ad.destroy() }
+        verify(exactly = 1) { listener.onInterstitialClosed() }
     }
 
     @Test
-    fun `event listener is notified of load with the interstitial format`() {
+    fun `destroy while a show is opening waits for its result`() {
+        val adapter = readyAdapter()
+        adapter.show()
+        adapter.destroy()
+        verify(exactly = 0) { ad.destroy() }
+    }
+
+    @Test
+    fun `a show failure after destroy reports nothing and releases the ad`() {
+        val adapter = readyAdapter()
+        adapter.show()
+        adapter.destroy()
+        factory.completeShow(usedUpShowError())
+        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
+        verify(exactly = 1) { ad.destroy() }
+    }
+
+    @Test
+    fun `a show rejected before it starts releases an ad destroyed while it was opening`() {
+        val adapter = readyAdapter()
+        adapter.show()
+        adapter.destroy()
+        factory.completeShow(ChartboostError.Show.NoContext)
+        verify(exactly = 1) { ad.destroy() }
+    }
+
+    @Test
+    fun `a second destroy does nothing`() {
+        val adapter = readyAdapter()
+        adapter.destroy()
+        adapter.destroy()
+        verify(exactly = 1) { ad.destroy() }
+    }
+
+    @Test
+    fun `a reward earned after destroy still reaches the listener`() {
+        // The ad on screen outlives destroy(), so a reward the user genuinely earns after the host called it
+        // (e.g. from its Activity onDestroy) must still be granted.
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events).also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null)
-        verify { events.onAdLoaded(ChartboostAdFormat.INTERSTITIAL) }
+        val adapter = readyAdapter(eventListener = events, rewarded = true)
+        adapter.show()
+        adapter.destroy()
+        adapter.onRewardEarned(ad)
+        verify(exactly = 1) { listener.onUserEarnedReward() }
+        verify(exactly = 1) { events.onUserEarnedReward(ChartboostAdFormat.REWARDED) }
     }
 
     @Test
-    fun `event listener reports the rewarded format on reward`() {
-        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events).also { it.loadAd(config(rewarded = true), fakeBidResponse()) }
-        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        verify { events.onUserEarnedReward(ChartboostAdFormat.REWARDED) }
+    fun `a close after destroy still reaches the listener`() {
+        val adapter = displayedAdapter()
+        adapter.destroy()
+        adapter.onAdClosed(ad, null)
+        verify(exactly = 1) { listener.onInterstitialClosed() }
+    }
+
+    // endregion
+
+    // region engagement
+
+    @Test
+    fun `click is forwarded`() {
+        readyAdapter().onAdClicked(ad)
+        verify { listener.onInterstitialClicked() }
     }
 
     @Test
-    fun `event listener is notified of display on show success`() {
-        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events).also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.onAdShown(mockk<ShowEvent>(relaxed = true), null)
-        verify { events.onAdDisplayed(ChartboostAdFormat.INTERSTITIAL) }
+    fun `close is forwarded and releases the ad`() {
+        displayedAdapter().onAdClosed(ad, null)
+        verify { listener.onInterstitialClosed() }
+        verify(exactly = 1) { ad.destroy() }
     }
 
     @Test
-    fun `event listener is notified of click`() {
-        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events).also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.onAdClicked(mockk<ClickEvent>(relaxed = true), null)
-        verify { events.onAdClicked(ChartboostAdFormat.INTERSTITIAL) }
+    fun `show after the ad closed does not reach the SDK`() {
+        val adapter = displayedAdapter()
+        adapter.onAdClosed(ad, null)
+        adapter.show()
+        assertEquals(1, showCount())
     }
 
     @Test
-    fun `event listener is notified of dismissal`() {
-        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events).also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
-        verify { events.onAdDismissed(ChartboostAdFormat.INTERSTITIAL) }
+    fun `reward is forwarded as user earned reward`() {
+        readyAdapter(rewarded = true).onRewardEarned(ad)
+        verify { listener.onUserEarnedReward() }
     }
 
     @Test
-    fun `expiry before ready reports failed to load as a reload signal`() {
-        val adapter = adapter().also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.onAdExpired(expirationEvent())
-        verify { listener.onInterstitialFailedToLoad(any()) }
+    fun `an impression reaches no Prebid listener`() {
+        readyAdapter().onImpressionRecorded(ad)
+        verify(exactly = 0) { listener.onInterstitialDisplayed() }
     }
+
+    // endregion
+
+    // region reward
+
+    @Test
+    fun `a rewarded ad reports the Prebid Server reward of the bid to Prebid`() {
+        val reward = fakeReward()
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config) { it.onUserEarnedReward() }
+        rewardedAdapter(config, reward).onRewardEarned(ad)
+        assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `a rewarded bid without a Prebid Server reward reports no reward`() {
+        val config = rewardedConfig()
+        // A reward left in the manager must not leak into an ad whose bid carries none.
+        config.rewardManager.rewardedExt = fakeRewardedExt(fakeReward(type = LEFTOVER_REWARD_TYPE))
+        val seen = rewardsSeenByPrebid(config) { it.onUserEarnedReward() }
+        rewardedAdapter(config, reward = null).onRewardEarned(ad)
+        assertEquals(listOf<Reward?>(null), seen)
+    }
+
+    @Test
+    fun `a rewarded ad closed before the SDK reward still reports the Prebid Server reward`() {
+        // Prebid grants the reward on close as well, and reads the RewardManager at that moment.
+        val reward = fakeReward()
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
+        rewardedAdapter(config, reward).onAdClosed(ad, null)
+        assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `a load on the ad unit while the ad shows still reports the Prebid Server reward of the shown ad`() {
+        val reward = fakeReward()
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config) { it.onUserEarnedReward() }
+        val adapter = rewardedAdapter(config, reward)
+        loadOnTheAdUnit(config)
+        adapter.onRewardEarned(ad)
+        assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `a rewarded ad closed before the SDK reward and after a load on the ad unit still reports the Prebid Server reward`() {
+        val reward = fakeReward()
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
+        val adapter = rewardedAdapter(config, reward)
+        loadOnTheAdUnit(config)
+        adapter.onAdClosed(ad, null)
+        assertEquals(listOf<Reward?>(reward), seen)
+    }
+
+    @Test
+    fun `a rewarded ad closed after the SDK reward and a load on the ad unit does not get the Prebid Server reward back`() {
+        // The load lets Prebid grant once more on close. With the bid's reward back in, it would be credited twice.
+        val config = rewardedConfig()
+        val seen = rewardsSeenByPrebid(config) { it.onInterstitialClosed() }
+        val adapter = rewardedAdapter(config)
+        adapter.onRewardEarned(ad)
+        loadOnTheAdUnit(config)
+        adapter.onAdClosed(ad, null)
+        assertEquals(listOf<Reward?>(null), seen)
+    }
+
+    @Test
+    fun `granting the reward keeps the reward a newer load put on the ad unit`() {
+        val config = rewardedConfig()
+        val adapter = rewardedAdapter(config)
+        val newer = fakeRewardedExt(fakeReward(type = NEWER_REWARD_TYPE))
+        config.rewardManager.rewardedExt = newer
+        adapter.onRewardEarned(ad)
+        assertSame(newer, config.rewardManager.rewardedExt)
+    }
+
+    @Test
+    fun `a load from inside the reward callback is not undone`() {
+        val config = rewardedConfig()
+        every { listener.onUserEarnedReward() } answers { loadOnTheAdUnit(config) }
+        rewardedAdapter(config).onRewardEarned(ad)
+        assertNull(config.rewardManager.rewardedExt.reward)
+    }
+
+    // endregion
+
+    // region expiry
 
     @Test
     fun `expiry after ready reports failed to load so the ad unit can reload`() {
-        val adapter = readyAdapter()
-        adapter.onAdExpired(expirationEvent())
+        readyAdapter().onAdExpired(ad)
         verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
     }
 
     @Test
     fun `expiry after ready notifies the event listener with the ad's format`() {
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = readyAdapter(eventListener = events, rewarded = true)
-        adapter.onAdExpired(expirationEvent())
+        readyAdapter(eventListener = events, rewarded = true).onAdExpired(ad)
         verify { events.onAdFailed(ChartboostAdFormat.REWARDED, any()) }
     }
 
     @Test
-    fun `expiry after ready clears the cached ad`() {
-        val adapter = readyAdapter()
-        adapter.onAdExpired(expirationEvent())
-        verify { factory.interstitial.clearCache() }
+    fun `expiry after ready releases the ad`() {
+        readyAdapter().onAdExpired(ad)
+        verify(exactly = 1) { ad.destroy() }
     }
 
     @Test
     fun `show after expiry does not reach the SDK`() {
         val adapter = readyAdapter()
-        adapter.onAdExpired(expirationEvent())
+        adapter.onAdExpired(ad)
         adapter.show()
-        verify(exactly = 0) { factory.interstitial.show() }
+        assertEquals(0, showCount())
     }
 
     @Test
     fun `a second expiry after ready reports failed to load only once`() {
         val adapter = readyAdapter()
-        adapter.onAdExpired(expirationEvent())
-        adapter.onAdExpired(expirationEvent())
+        adapter.onAdExpired(ad)
+        adapter.onAdExpired(ad)
         verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
     }
 
@@ -484,34 +541,47 @@ class ChartboostFullscreenAdapterTest {
     fun `expiry after destroy reports nothing`() {
         val adapter = readyAdapter()
         adapter.destroy()
-        adapter.onAdExpired(expirationEvent())
+        adapter.onAdExpired(ad)
         verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
     }
 
-    @Test
-    fun `a cache error then an expiry reports failed to load only once`() {
-        val adapter = adapter().also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.onAdLoaded(mockk(relaxed = true), cacheError(CacheError.Code.NO_AD_FOUND))
-        adapter.onAdExpired(expirationEvent())
-        verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
-    }
+    // endregion
+
+    // region event listener
 
     @Test
-    fun `a late success after expiry never reports ready for display`() {
-        val adapter = adapter().also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.onAdExpired(expirationEvent()) // reports failed, nulls the ad
-        adapter.onAdLoaded(mockk<CacheEvent>(relaxed = true), null) // late success must not resurrect it
-        verify(exactly = 0) { listener.onInterstitialReadyForDisplay() }
-        verify(exactly = 1) { listener.onInterstitialFailedToLoad(any()) }
-    }
-
-    @Test
-    fun `onAdShown reports displayed only once when redelivered`() {
+    fun `event listener is notified of load with the interstitial format`() {
         val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events).also { it.loadAd(config(false), fakeBidResponse()) }
-        adapter.onAdShown(mockk(relaxed = true), null)
-        adapter.onAdShown(mockk(relaxed = true), null)
-        verify(exactly = 1) { listener.onInterstitialDisplayed() }
+        readyAdapter(eventListener = events)
+        verify { events.onAdLoaded(ChartboostAdFormat.INTERSTITIAL) }
+    }
+
+    @Test
+    fun `event listener reports the rewarded format on reward`() {
+        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
+        readyAdapter(eventListener = events, rewarded = true).onRewardEarned(ad)
+        verify { events.onUserEarnedReward(ChartboostAdFormat.REWARDED) }
+    }
+
+    @Test
+    fun `event listener is notified of display on show success`() {
+        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
+        displayedAdapter(eventListener = events)
+        verify { events.onAdDisplayed(ChartboostAdFormat.INTERSTITIAL) }
+    }
+
+    @Test
+    fun `event listener is notified of click`() {
+        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
+        readyAdapter(eventListener = events).onAdClicked(ad)
+        verify { events.onAdClicked(ChartboostAdFormat.INTERSTITIAL) }
+    }
+
+    @Test
+    fun `event listener is notified of dismissal`() {
+        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
+        displayedAdapter(eventListener = events).onAdClosed(ad, null)
+        verify { events.onAdDismissed(ChartboostAdFormat.INTERSTITIAL) }
     }
 
     @Test
@@ -521,51 +591,5 @@ class ChartboostFullscreenAdapterTest {
         verify { events.onAdFailed(eq(ChartboostAdFormat.INTERSTITIAL), any()) }
     }
 
-    @Test
-    fun `late cache failure after ready does not report failed to load`() {
-        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
-        val event = mockk<CacheEvent>(relaxed = true)
-        adapter.onAdLoaded(event, null) // ready
-        adapter.onAdLoaded(event, cacheError(CacheError.Code.NO_AD_FOUND)) // late cache error
-        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
-        verify(exactly = 1) { listener.onInterstitialReadyForDisplay() }
-    }
-
-    @Test
-    fun `a late load after destroy does not report ready for display`() {
-        val adapter = adapter().also { it.loadAd(config(false), fakeBidResponse()) }
-        adapter.destroy()
-        adapter.onAdLoaded(mockk(relaxed = true), null)
-        verify(exactly = 0) { listener.onInterstitialReadyForDisplay() }
-    }
-
-    @Test
-    fun `loadAd after destroy does not build an ad`() {
-        // destroy() releases the context so a Prebid-retained controller cannot pin an Activity; a late
-        // loadAd on the discarded controller must be a no-op rather than resurrecting it.
-        val adapter = adapter().also { it.destroy() }
-        adapter.loadAd(config(rewarded = false), fakeBidResponse())
-        assertFalse(factory.createdInterstitial)
-        verify(exactly = 0) { listener.onInterstitialFailedToLoad(any()) }
-    }
-
-    @Test
-    fun `a reward earned after destroy still reaches the listener`() {
-        // clearCache() does not tear down a showing fullscreen ad, so a reward the user genuinely earns
-        // after the host called destroy() (e.g. from its Activity onDestroy) must still be granted.
-        val events = mockk<ChartboostPrebidEventListener>(relaxed = true)
-        val adapter = adapter(eventListener = events).also { it.loadAd(config(rewarded = true), fakeBidResponse()) }
-        adapter.destroy()
-        adapter.onRewardEarned(mockk<RewardEvent>(relaxed = true))
-        verify(exactly = 1) { listener.onUserEarnedReward() }
-        verify(exactly = 1) { events.onUserEarnedReward(ChartboostAdFormat.REWARDED) }
-    }
-
-    @Test
-    fun `a dismiss after destroy still reaches the listener`() {
-        val adapter = adapter().also { it.loadAd(config(rewarded = false), fakeBidResponse()) }
-        adapter.destroy()
-        adapter.onAdDismiss(mockk<DismissEvent>(relaxed = true))
-        verify(exactly = 1) { listener.onInterstitialClosed() }
-    }
+    // endregion
 }

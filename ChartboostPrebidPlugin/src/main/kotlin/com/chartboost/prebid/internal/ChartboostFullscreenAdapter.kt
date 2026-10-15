@@ -6,22 +6,13 @@
 
 package com.chartboost.prebid.internal
 
-import android.content.Context
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
-import com.chartboost.sdk.ads.Ad
-import com.chartboost.sdk.callbacks.InterstitialCallback
-import com.chartboost.sdk.callbacks.RewardedCallback
-import com.chartboost.sdk.events.CacheError
-import com.chartboost.sdk.events.CacheEvent
-import com.chartboost.sdk.events.ClickError
-import com.chartboost.sdk.events.ClickEvent
-import com.chartboost.sdk.events.DismissEvent
-import com.chartboost.sdk.events.ExpirationEvent
-import com.chartboost.sdk.events.ImpressionEvent
-import com.chartboost.sdk.events.RewardEvent
-import com.chartboost.sdk.events.ShowError
-import com.chartboost.sdk.events.ShowEvent
+import com.chartboost.sdk.ads.FullscreenAd
+import com.chartboost.sdk.ads.InterstitialAdLoadRequest
+import com.chartboost.sdk.ads.RewardedAdLoadRequest
+import com.chartboost.sdk.callbacks.FullscreenAdCallback
+import com.chartboost.sdk.events.ChartboostError
 import org.prebid.mobile.api.exceptions.AdException
 import org.prebid.mobile.api.rendering.PrebidMobileInterstitialControllerInterface
 import org.prebid.mobile.configuration.AdUnitConfiguration
@@ -33,29 +24,28 @@ import org.prebid.mobile.rendering.interstitial.rewarded.RewardedExt
 /**
  * Interstitial and rewarded controller, plus the bridge from Chartboost callbacks to
  * InterstitialControllerListener. Rewarded rides the same path, branched on
- * [AdUnitConfiguration.isRewarded] at load. InterstitialCallback and RewardedCallback are siblings, so
- * the adapter implements both and serves as the callback for whichever ad it builds.
+ * [AdUnitConfiguration.isRewarded] at load: the request type picks the format, and only a rewarded ad
+ * calls [onRewardEarned].
  */
 internal class ChartboostFullscreenAdapter(
-    context: Context,
     private val listener: InterstitialControllerListener,
     private val factory: ChartboostAdFactory,
     private val mainThread: MainThreadExecutor = DefaultMainThreadExecutor,
     private val location: String = PREBID_LOCATION,
     private val eventListener: ChartboostPrebidEventListener? = null,
-) : PrebidMobileInterstitialControllerInterface, InterstitialCallback, RewardedCallback {
+) : PrebidMobileInterstitialControllerInterface, FullscreenAdCallback {
 
     private val readyLatch = SingleFireLatch()
     private val displayedLatch = SingleFireLatch()
     private val failedLatch = SingleFireLatch()
     private val destroyed = SingleFireLatch()
 
-    // Released on destroy(): the factory needs the context only to construct the ad, and Prebid can retain
-    // a discarded controller, so holding a publisher Activity past destroy() would pin it.
-    private var context: Context? = context
-
-    private var ad: Ad? = null
+    private var ad: FullscreenAd? = null
     private var adFormat: ChartboostAdFormat = ChartboostAdFormat.INTERSTITIAL
+
+    // From show() until the ad closes or the show fails. FullscreenAd.destroy() tears down an ad on screen,
+    // so a destroy() in this window waits for the close and the post-show signals still reach Prebid.
+    private var showInProgress = false
 
     // Rewarded only: the ad unit's RewardManager and the reward of this ad's bid, until a grant uses it. See
     // withBidReward().
@@ -63,10 +53,8 @@ internal class ChartboostFullscreenAdapter(
     private var bidReward: RewardedExt? = null
 
     override fun loadAd(adUnitConfiguration: AdUnitConfiguration, bidResponse: BidResponse) {
-        val context = this.context
-        if (context == null) {
-            // destroy() already ran, so a late loadAd must not resurrect the controller or re-pin the
-            // released context.
+        if (destroyed.hasFired) {
+            // A late loadAd must not resurrect a controller Prebid already discarded.
             PluginLog.w("fullscreen loadAd after destroy(); ignoring")
             return
         }
@@ -85,20 +73,35 @@ internal class ChartboostFullscreenAdapter(
         }
 
         val mediation = MediationFactory.create()
-        // Interstitial and Rewarded share the SDK's Ad interface.
-        val created = try {
-            val newAd = if (adUnitConfiguration.isRewarded) {
-                factory.createRewarded(context, location, this, mediation)
+        val onResult: LoadResult<FullscreenAd> = { ad, error -> mainThread.execute { onLoadResult(ad, error) } }
+        try {
+            if (adUnitConfiguration.isRewarded) {
+                factory.loadRewarded(RewardedAdLoadRequest(location, adm, mediation), onResult)
             } else {
-                factory.createInterstitial(context, location, this, mediation)
+                factory.loadInterstitial(InterstitialAdLoadRequest(location, adm, mediation), onResult)
             }
-            newAd.cache(adm)
-            newAd
         } catch (e: Exception) {
             mainThread.execute { reportLoadFailed(ChartboostErrorMapper.adCreationFailed(e)) }
+        }
+    }
+
+    private fun onLoadResult(loaded: FullscreenAd?, error: ChartboostError?) {
+        if (loaded == null) {
+            // A late failure after destroy() must not reach a controller Prebid already discarded.
+            if (!destroyed.hasFired) reportLoadFailed(ChartboostErrorMapper.map(error))
             return
         }
-        ad = created
+        // Nothing else owns a late ad, so release it rather than leak its SDK core.
+        if (destroyed.hasFired || failedLatch.hasFired) {
+            loaded.destroy()
+            return
+        }
+        loaded.callback = this
+        ad = loaded
+        if (readyLatch.fire()) {
+            listener.onInterstitialReadyForDisplay()
+            eventListener?.onAdLoaded(adFormat)
+        }
     }
 
     override fun show() {
@@ -108,69 +111,52 @@ internal class ChartboostFullscreenAdapter(
             PluginLog.w("fullscreen show() called with no loaded ad (destroyed, expired, or never loaded); ignoring")
             return
         }
-        ad.show()
+        showInProgress = true
+        ad.show { result -> mainThread.execute { onShowResult(ad, result.error) } }
+    }
+
+    private fun onShowResult(shown: FullscreenAd, error: ChartboostError?) {
+        if (shown !== ad) return
+        if (error == null) {
+            if (displayedLatch.fire()) {
+                listener.onInterstitialDisplayed()
+                eventListener?.onAdDisplayed(adFormat)
+            }
+        } else {
+            reportShowFailed(shown, error)
+        }
     }
 
     override fun destroy() {
-        // The SDK exposes no destroy() for fullscreen ads, so clearCache() is the available teardown. It
-        // only clears loaded-ad state and does NOT tear down an ad that is already showing, so post-show
-        // signals (impression/click/dismiss/reward) keep arriving and must still be forwarded, which is why
-        // the listeners are retained here. Only the load paths are gated on `destroyed` (see onAdLoaded
-        // and onAdExpired). The context has no post-destroy use.
-        ad?.clearCache()
+        if (!destroyed.fire()) return
+        // An ad on screen keeps forwarding its click, reward and close until onAdClosed releases it, which
+        // is why the listeners are retained. Only the load paths are gated on `destroyed`.
+        if (showInProgress) return
+        ad?.destroy()
         ad = null
-        context = null
-        destroyed.fire()
     }
 
-    override fun onAdLoaded(event: CacheEvent, error: CacheError?) = mainThread.execute {
-        // A late cache result after destroy() must not report READY to a controller Prebid already
-        // discarded, which leaves the ad unit stuck ready and a later show() a no-op. Engagement callbacks
-        // below are deliberately NOT gated: clearCache() does not tear down a showing ad.
-        if (destroyed.hasFired) return@execute
-        if (error != null) {
-            // Mapping logs the error. A cache error after ready-for-display must not fire FAILED-after-LOADED:
-            // the loaded ad is still usable, unlike an expired one (see onAdExpired).
-            val failure = ChartboostErrorMapper.map(error)
-            if (!readyLatch.hasFired) reportLoadFailed(failure)
-        } else if (!failedLatch.hasFired && readyLatch.fire()) {
-            // Suppress a late success after a reported failure, so the publisher never sees READY
-            // following FAILED for one load.
-            listener.onInterstitialReadyForDisplay()
-            eventListener?.onAdLoaded(adFormat)
-        }
+    override fun onImpressionRecorded(ad: FullscreenAd) = mainThread.execute {
+        ad.auctionId.takeIf { it.isNotBlank() }?.let { PluginLog.d("fullscreen impression recorded, Chartboost auctionId=$it") }
     }
 
-    override fun onAdRequestedToShow(event: ShowEvent) {
-        PluginLog.d("fullscreen onAdRequestedToShow")
-    }
-
-    override fun onAdShown(event: ShowEvent, error: ShowError?) = mainThread.execute {
-        if (error != null) {
-            reportShowFailed(error)
-        } else if (displayedLatch.fire()) {
-            listener.onInterstitialDisplayed()
-            eventListener?.onAdDisplayed(adFormat)
-        }
-    }
-
-    override fun onImpressionRecorded(event: ImpressionEvent) = mainThread.execute {
-        event.nonBlankAdId?.let { PluginLog.d("fullscreen impression recorded, Chartboost adID=$it") }
-    }
-
-    override fun onAdClicked(event: ClickEvent, error: ClickError?) = mainThread.execute {
-        if (error != null) PluginLog.d("fullscreen click error ${error.code}")
+    override fun onAdClicked(ad: FullscreenAd) = mainThread.execute {
         listener.onInterstitialClicked()
         eventListener?.onAdClicked(adFormat)
     }
 
-    override fun onAdDismiss(event: DismissEvent) = mainThread.execute {
+    override fun onAdClosed(ad: FullscreenAd, error: ChartboostError?) = mainThread.execute {
+        error?.let { PluginLog.w("fullscreen closed with an error: ${ChartboostErrorMapper.mapShow(it)}") }
         // Prebid grants the reward on close as well.
         withBidReward { listener.onInterstitialClosed() }
         eventListener?.onAdDismissed(adFormat)
+        // A closed ad is used up, and nothing else will release it.
+        showInProgress = false
+        ad.destroy()
+        if (this.ad === ad) this.ad = null
     }
 
-    override fun onRewardEarned(event: RewardEvent) = mainThread.execute {
+    override fun onRewardEarned(ad: FullscreenAd) = mainThread.execute {
         withBidReward { listener.onUserEarnedReward() }
         eventListener?.onUserEarnedReward(adFormat)
     }
@@ -195,46 +181,49 @@ internal class ChartboostFullscreenAdapter(
         if (manager.rewardedExt === reward) manager.rewardedExt = newer
     }
 
-    override fun onAdExpired(event: ExpirationEvent) = mainThread.execute {
-        // The SDK expires only a cached ad that has not started showing, so this can follow ready.
-        if (destroyed.hasFired || failedLatch.hasFired) return@execute
-        reportAdGone(ChartboostErrorMapper.adExpired(event))
+    override fun onAdExpired(ad: FullscreenAd) = mainThread.execute {
+        // The SDK expires only a loaded ad that has not started showing, so this can follow ready.
+        if (destroyed.hasFired || failedLatch.hasFired || this.ad !== ad) return@execute
+        reportAdGone(ChartboostErrorMapper.adExpired())
     }
 
     /**
-     * No impression fires on a failed show, which is correct billing. The ad survives when the SDK rejects
-     * the show up front (e.g. no usable Activity), so show() can be retried, or when AD_ALREADY_VISIBLE says
-     * an earlier show() of it is still opening. Any other failure uses it up.
+     * No impression fires on a failed show, which is correct billing. The ad survives a show the SDK rejects
+     * before it starts, so show() can be retried: no usable Activity, this ad's earlier show() still on
+     * screen, the SDK not started, or Chartboost turning the app off. Any other failure uses it up. After
+     * destroy() Prebid has discarded this controller, so a failure is only logged and the ad released.
      */
-    private fun reportShowFailed(error: ShowError) {
-        val ad = this.ad
-        if (ad == null || displayedLatch.hasFired || error.code == ShowError.Code.AD_ALREADY_VISIBLE ||
-            isStillCached(ad)
-        ) {
+    private fun reportShowFailed(shown: FullscreenAd, error: ChartboostError) {
+        // The earlier show() of this ad still owns the screen, so it alone clears the in-progress flag.
+        if (error !is ChartboostError.Show.FullscreenAlreadyShowing) showInProgress = false
+        if (destroyed.hasFired || displayedLatch.hasFired || error.leavesAdLoaded) {
             PluginLog.w("fullscreen show failed: ${ChartboostErrorMapper.mapShow(error)}")
+            if (destroyed.hasFired && !showInProgress) releaseAd(shown)
             return
         }
         reportAdGone(ChartboostErrorMapper.showFailed(error))
     }
 
-    /**
-     * isCached() is deprecated for publishers, but it is the only read of the SDK load slot that a failed show
-     * empties. The SDK is compileOnly, so a newer publisher SDK may no longer have it: treat the ad as cached
-     * then, which keeps the plain log-only handling instead of crashing.
-     */
-    @Suppress("DEPRECATION")
-    private fun isStillCached(ad: Ad): Boolean = runCatching { ad.isCached() }.getOrDefault(true)
+    private val ChartboostError.leavesAdLoaded: Boolean
+        get() = this is ChartboostError.Show.NoContext ||
+            this is ChartboostError.Show.FullscreenAlreadyShowing ||
+            this is ChartboostError.Show.NotInitialized ||
+            this is ChartboostError.Show.Disabled
 
     /**
      * The SDK no longer has the ad, after an expiry or a failed show. Prebid has no hook for either, so report
      * a load failure even after ready: it resets the ad unit so the publisher can reload, instead of leaving a
-     * dead unit that still reports loaded. Clear the cache now, since destroy() may never run for an ad that
+     * dead unit that still reports loaded. Release the ad now, since destroy() may never run for an ad that
      * never showed.
      */
     private fun reportAdGone(error: AdException) {
-        ad?.clearCache()
-        ad = null
+        ad?.let { releaseAd(it) }
         reportLoadFailed(error)
+    }
+
+    private fun releaseAd(gone: FullscreenAd) {
+        gone.destroy()
+        if (ad === gone) ad = null
     }
 
     /** Reports a load failure to the Prebid listener and the optional plugin listener, at most once. */

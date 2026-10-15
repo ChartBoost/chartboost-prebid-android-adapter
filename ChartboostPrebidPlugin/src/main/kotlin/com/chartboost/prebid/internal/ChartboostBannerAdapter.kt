@@ -12,19 +12,15 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.os.Handler
 import android.os.Looper
+import android.view.Gravity
 import android.widget.FrameLayout
 import com.chartboost.prebid.ChartboostAdFormat
 import com.chartboost.prebid.ChartboostPrebidEventListener
-import com.chartboost.sdk.ads.Banner
-import com.chartboost.sdk.callbacks.BannerCallback
-import com.chartboost.sdk.events.CacheError
-import com.chartboost.sdk.events.CacheEvent
-import com.chartboost.sdk.events.ClickError
-import com.chartboost.sdk.events.ClickEvent
-import com.chartboost.sdk.events.ExpirationEvent
-import com.chartboost.sdk.events.ImpressionEvent
-import com.chartboost.sdk.events.ShowError
-import com.chartboost.sdk.events.ShowEvent
+import com.chartboost.sdk.ads.BannerAdLoadRequest
+import com.chartboost.sdk.ads.BannerAdView
+import com.chartboost.sdk.ads.BannerSize
+import com.chartboost.sdk.callbacks.BannerAdViewCallback
+import com.chartboost.sdk.events.ChartboostError
 import org.prebid.mobile.AdSize
 import org.prebid.mobile.api.exceptions.AdException
 import org.prebid.mobile.api.rendering.BannerView
@@ -35,10 +31,12 @@ import org.prebid.mobile.rendering.bidding.listeners.DisplayViewListener
 
 /**
  * Banner host view and the bridge from Chartboost callbacks to Prebid's DisplayViewListener. It is both
- * the View returned by createBannerAdView and the SDK's BannerCallback, holding one [Banner] as its child.
+ * the View returned by createBannerAdView and the SDK's BannerAdViewCallback, holding the loaded
+ * [BannerAdView] as its child once the load succeeds.
  *
- * The banner path has no separate loadAd, so caching starts at construction. "loaded" is reported on cache
- * success, not on show, which re-fires under refresh, and "displayed" on impression.
+ * The banner path has no separate loadAd, so the load starts at construction. "loaded" is reported on load
+ * success and "displayed" on impression. The [BannerAdView] renders on its own once it is attached, visible
+ * and laid out, so the adapter never asks it to show.
  *
  * Prebid's [destroy] tears the banner down, which it calls from BannerView.destroy(), when a refresh
  * replaces the view, and from MAX. A detached view is torn down after a short delay only if its Activity is
@@ -61,14 +59,14 @@ internal class ChartboostBannerAdapter(
     private val teardownScheduler: TeardownScheduler? = null,
     private var eventListener: ChartboostPrebidEventListener? = null,
     private val adUnitFallbackSize: AdSize? = null,
-) : FrameLayout(context), BannerCallback, PrebidDestroyable {
+) : FrameLayout(context), BannerAdViewCallback, PrebidDestroyable {
 
     private val loadedLatch = SingleFireLatch()
     private val displayedLatch = SingleFireLatch()
     private val failedLatch = SingleFireLatch()
     private val destroyed = SingleFireLatch()
 
-    private var banner: Banner? = null
+    private var bannerAdView: BannerAdView? = null
     private var teardownAction: Runnable? = null
 
     // Not View.postDelayed/removeCallbacks: those only reach the handler of the window the view is attached
@@ -89,7 +87,7 @@ internal class ChartboostBannerAdapter(
                     reportFailed(ChartboostErrorMapper.unsupportedBannerSize(width, height))
                 }
             } else {
-                createAndCache(size, adm)
+                startLoad(size, adm)
             }
         }
     }
@@ -117,17 +115,34 @@ internal class ChartboostBannerAdapter(
         return fallback.width to fallback.height
     }
 
-    private fun createAndCache(size: Banner.BannerSize, adm: String) {
-        // Report through the loading delegate rather than letting a construction failure escape
+    private fun startLoad(size: BannerSize.Fixed, adm: String) {
+        // Report through the loading delegate rather than letting a load that throws escape
         // createBannerAdView.
         try {
-            val created = factory.createBanner(context, location, size, this, MediationFactory.create())
-            banner = created
-            addView(created)
-            // cache() is async internally, so it does not re-enter the loading delegate synchronously.
-            created.cache(adm)
+            val request = BannerAdLoadRequest(location, size, adm, MediationFactory.create())
+            factory.loadBanner(context, request) { ad, error -> mainThread.execute { onLoadResult(ad, error) } }
         } catch (e: Exception) {
             mainThread.execute { reportFailed(ChartboostErrorMapper.adCreationFailed(e)) }
+        }
+    }
+
+    private fun onLoadResult(loaded: BannerAdView?, error: ChartboostError?) {
+        if (loaded == null) {
+            reportFailed(ChartboostErrorMapper.map(error))
+            return
+        }
+        // Nothing else owns a late banner, so release it rather than leak its SDK core.
+        if (destroyed.hasFired || failedLatch.hasFired) {
+            loaded.destroy()
+            return
+        }
+        loaded.callback = this
+        bannerAdView = loaded
+        // The banner measures itself to its ad size; centered, as the SDK keeps it inside a larger slot.
+        addView(loaded, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT, Gravity.CENTER))
+        if (loadedLatch.fire()) {
+            displayViewListener.onAdLoaded()
+            eventListener?.onAdLoaded(ChartboostAdFormat.BANNER)
         }
     }
 
@@ -142,49 +157,41 @@ internal class ChartboostBannerAdapter(
         }
     }
 
-    override fun onAdLoaded(event: CacheEvent, error: CacheError?) = mainThread.execute {
+    override fun onAdWillAppear(ad: BannerAdView) {
+        PluginLog.d("banner will appear")
+    }
+
+    override fun onImpressionRecorded(ad: BannerAdView) = mainThread.execute {
         if (destroyed.hasFired) return@execute
-        if (error != null) {
-            reportFailed(ChartboostErrorMapper.map(error))
-        } else if (!failedLatch.hasFired && loadedLatch.fire()) {
-            // Suppress a late success after a failure was already reported, so the publisher never
-            // sees LOADED following FAILED for one load.
-            displayViewListener.onAdLoaded()
-            eventListener?.onAdLoaded(ChartboostAdFormat.BANNER)
-            banner?.show() // renders the cached creative inline into this host view
-        }
-    }
-
-    override fun onAdRequestedToShow(event: ShowEvent) {
-        PluginLog.d("banner onAdRequestedToShow")
-    }
-
-    override fun onAdShown(event: ShowEvent, error: ShowError?) {
-        // Loaded was already reported off cache, and a failed show fires no impression, which is correct
-        // billing, so log only.
-        if (error != null) PluginLog.w("banner show failed: ${ChartboostErrorMapper.mapShow(error)}")
-    }
-
-    override fun onImpressionRecorded(event: ImpressionEvent) = mainThread.execute {
-        if (destroyed.hasFired) return@execute
-        event.nonBlankAdId?.let { PluginLog.d("banner impression recorded, Chartboost adID=$it") }
+        ad.auctionId.takeIf { it.isNotBlank() }?.let { PluginLog.d("banner impression recorded, Chartboost auctionId=$it") }
         if (displayedLatch.fire()) {
             displayViewListener.onAdDisplayed()
             eventListener?.onAdDisplayed(ChartboostAdFormat.BANNER)
         }
     }
 
-    override fun onAdClicked(event: ClickEvent, error: ClickError?) = mainThread.execute {
+    override fun onAdClicked(ad: BannerAdView) = mainThread.execute {
         if (destroyed.hasFired) return@execute
-        if (error != null) PluginLog.d("banner click error ${error.code}")
         displayViewListener.onAdClicked()
         eventListener?.onAdClicked(ChartboostAdFormat.BANNER)
     }
 
-    override fun onAdExpired(event: ExpirationEvent) {
-        // The banner caches and shows in one step, so expiry here is almost always post-display, and
-        // reporting a load failure after onAdLoaded would break Prebid's contract.
-        PluginLog.w("banner ad expired [reason ${event.reason}]")
+    override fun onModalPresented(ad: BannerAdView) {
+        PluginLog.d("banner click opened a screen over the app")
+    }
+
+    override fun onModalDismissed(ad: BannerAdView) {
+        PluginLog.d("banner click screen closed")
+    }
+
+    override fun onAppLeft(ad: BannerAdView) {
+        PluginLog.d("banner click left the app")
+    }
+
+    override fun onAdExpired(ad: BannerAdView) {
+        // Only a banner that never rendered expires, after onAdLoaded was already reported, and a load
+        // failure after that would break Prebid's contract.
+        PluginLog.w("banner ad expired before it rendered")
     }
 
     override fun destroy() = tearDown()
@@ -246,8 +253,8 @@ internal class ChartboostBannerAdapter(
         if (!destroyed.fire()) return
         cancelPendingTeardown()
         mainThread.execute {
-            banner?.detach()
-            banner = null
+            bannerAdView?.destroy()
+            bannerAdView = null
             // Drop the publisher listener too, so a destroyed-but-not-GC'd view does not pin it; every use
             // is already null-safe.
             eventListener = null

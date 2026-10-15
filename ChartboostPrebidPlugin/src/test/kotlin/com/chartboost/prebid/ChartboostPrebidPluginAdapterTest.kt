@@ -12,7 +12,7 @@ import com.chartboost.prebid.fakes.FakeChartboostAdFactory
 import com.chartboost.prebid.fakes.fakeBid
 import com.chartboost.prebid.fakes.fakeBidResponse
 import com.chartboost.prebid.internal.PREBID_LOCATION
-import com.chartboost.sdk.ads.Banner
+import com.chartboost.sdk.ads.BannerSize
 import io.mockk.every
 import io.mockk.mockk
 import io.mockk.verify
@@ -118,7 +118,7 @@ class ChartboostPrebidPluginAdapterTest {
             mockk(relaxed = true),
             fakeBidResponse(fakeBid(adm = "<adm>", width = 320, height = 50)),
         )
-        assertEquals("MyPlacement", factory.lastLocation)
+        assertEquals("MyPlacement", factory.lastRequest?.adUnit)
     }
 
     @Test
@@ -132,7 +132,7 @@ class ChartboostPrebidPluginAdapterTest {
             mockk(relaxed = true),
             fakeBidResponse(fakeBid(adm = "<adm>", width = 320, height = 50)),
         )
-        assertEquals(PREBID_LOCATION, factory.lastLocation)
+        assertEquals(PREBID_LOCATION, factory.lastRequest?.adUnit)
     }
 
     @Test
@@ -149,7 +149,7 @@ class ChartboostPrebidPluginAdapterTest {
             mockk(relaxed = true),
             fakeBidResponse(fakeBid(adm = "<adm>", width = 320, height = 50)),
         )
-        assertEquals(PREBID_LOCATION, factory.lastLocation)
+        assertEquals(PREBID_LOCATION, factory.lastRequest?.adUnit)
     }
 
     @Test
@@ -166,7 +166,7 @@ class ChartboostPrebidPluginAdapterTest {
             adConfig,
             fakeBidResponse(fakeBid(adm = "<adm>", width = 0, height = 0)),
         )
-        assertEquals(Banner.BannerSize.MEDIUM, factory.lastBannerSize)
+        assertEquals(BannerSize.Fixed.MEDIUM, factory.lastBannerSize)
     }
 
     @Test
@@ -182,7 +182,7 @@ class ChartboostPrebidPluginAdapterTest {
             adConfig,
             fakeBidResponse(fakeBid(adm = "<adm>", width = 320, height = 50)),
         )
-        assertEquals(Banner.BannerSize.STANDARD, factory.lastBannerSize)
+        assertEquals(BannerSize.Fixed.STANDARD, factory.lastBannerSize)
         verify(exactly = 0) { adConfig.sizes }
         verify(exactly = 0) { adConfig.bannerParameters }
     }
@@ -198,7 +198,7 @@ class ChartboostPrebidPluginAdapterTest {
         every { adConfig.isRewarded } returns false
         r.createInterstitialController(context, mockk(relaxed = true), adConfig, fakeBidResponse())
             .loadAd(adConfig, fakeBidResponse())
-        assertEquals("FullscreenPlacement", factory.lastLocation)
+        assertEquals("FullscreenPlacement", factory.lastRequest?.adUnit)
     }
 
     @Test
@@ -209,6 +209,6 @@ class ChartboostPrebidPluginAdapterTest {
         every { adConfig.isRewarded } returns false
         r.createInterstitialController(context, mockk(relaxed = true), adConfig, fakeBidResponse())
             .loadAd(adConfig, fakeBidResponse())
-        assertEquals(PREBID_LOCATION, factory.lastLocation)
+        assertEquals(PREBID_LOCATION, factory.lastRequest?.adUnit)
     }
 }

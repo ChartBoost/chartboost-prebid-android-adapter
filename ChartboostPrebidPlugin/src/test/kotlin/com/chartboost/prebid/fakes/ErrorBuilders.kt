@@ -6,15 +6,7 @@
 
 package com.chartboost.prebid.fakes
 
-import com.chartboost.sdk.events.CacheError
-import com.chartboost.sdk.events.ShowError
-import io.mockk.every
-import io.mockk.mockk
+import com.chartboost.sdk.events.ChartboostError
 
-/** Mocked [CacheError] carrying only the given [code], the one property every mapper reads. */
-internal fun cacheError(code: CacheError.Code): CacheError =
-    mockk<CacheError>().also { every { it.code } returns code }
-
-/** Mocked [ShowError] carrying only the given [code], the one property every mapper reads. */
-internal fun showError(code: ShowError.Code): ShowError =
-    mockk<ShowError>().also { every { it.code } returns code }
+/** A show failure that uses the ad up, unlike the rejections the SDK makes before a show starts. */
+internal fun usedUpShowError(): ChartboostError = ChartboostError.Show.Unknown("render failed")

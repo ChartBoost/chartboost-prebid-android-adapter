@@ -14,7 +14,7 @@ plugins {
     id("com.jfrog.artifactory")
 }
 
-val chartboostSdkVersion: String = (project.findProperty("chartboostSdkVersion") as String?) ?: "9.14.0"
+val chartboostSdkVersion: String = (project.findProperty("chartboostSdkVersion") as String?) ?: "10.0.0"
 val prebidMobileVersion: String = (project.findProperty("prebidMobileVersion") as String?) ?: "3.4.0"
 
 // Adapter version, computed and validated once in the root build. Stamped into

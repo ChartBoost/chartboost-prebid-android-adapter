@@ -21,7 +21,7 @@ plugins {
 // `./gradlew tasks` with no -P flags).
 val adapterVersion: String = ((findProperty("ADAPTER_VERSION") as String?) ?: run {
     val prebidMajorScale = 100 // lifts the Prebid major into the hundreds place of the first component
-    val monPin = (findProperty("chartboostSdkVersion") as String?) ?: "9.14.0"
+    val monPin = (findProperty("chartboostSdkVersion") as String?) ?: "10.0.0"
     val prebidPin = (findProperty("prebidMobileVersion") as String?) ?: "3.4.0"
     fun intPart(value: String, label: String): Int =
         value.trim().toIntOrNull() ?: error("$label '$value' must be a non-negative integer")

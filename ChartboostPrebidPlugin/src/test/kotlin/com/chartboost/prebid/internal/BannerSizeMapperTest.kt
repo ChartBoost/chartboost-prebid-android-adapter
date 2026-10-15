@@ -6,7 +6,7 @@
 
 package com.chartboost.prebid.internal
 
-import com.chartboost.sdk.ads.Banner
+import com.chartboost.sdk.ads.BannerSize
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Test
@@ -17,7 +17,7 @@ class BannerSizeMapperTest {
     fun `every size the host SDK supports resolves to itself at its own dimensions`() {
         // A size's own slot admits nothing larger than itself, so identity holds for every entry. Driven off
         // entries rather than hardcoded names so it keeps holding when the pinned SDK gains HALFPAGE.
-        Banner.BannerSize.entries.forEach { size ->
+        BannerSize.Fixed.entries.forEach { size ->
             assertEquals(size, BannerSizeMapper.map(size.width, size.height))
         }
     }
@@ -26,7 +26,7 @@ class BannerSizeMapperTest {
     fun `fills a full-width slot with the largest size that fits inside it`() {
         // The case that makes exact matching untenable: a device-width request is the most common banner
         // slot there is, and STANDARD 320x50 fits inside it.
-        assertEquals(Banner.BannerSize.STANDARD, BannerSizeMapper.map(412, 50))
+        assertEquals(BannerSize.Fixed.STANDARD, BannerSizeMapper.map(412, 50))
     }
 
     @Test
@@ -39,7 +39,7 @@ class BannerSizeMapperTest {
     fun `prefers the larger size when two both fit`() {
         // 728x250 admits STANDARD (16k), MEDIUM (75k) and LEADERBOARD (65.5k). Largest area wins, so this
         // pins area rather than width or declaration order.
-        assertEquals(Banner.BannerSize.MEDIUM, BannerSizeMapper.map(728, 250))
+        assertEquals(BannerSize.Fixed.MEDIUM, BannerSizeMapper.map(728, 250))
     }
 
     @Test
@@ -63,20 +63,20 @@ class BannerSizeMapperTest {
         // so a 300x600 slot now resolves HALFPAGE where it used to resolve MEDIUM under 9.12.0. If the pin
         // ever moves again, this expectation must be re-checked by hand, which is the point: the flip
         // should be a conscious edit, not silent.
-        assertEquals(Banner.BannerSize.HALFPAGE, BannerSizeMapper.map(300, 600))
+        assertEquals(BannerSize.Fixed.HALFPAGE, BannerSizeMapper.map(300, 600))
     }
 
     @Test
     fun `resolves a slot larger than half page to half page`() {
         // 400x700 comfortably admits HALFPAGE (300x600, area 180000), which still beats every other size.
-        assertEquals(Banner.BannerSize.HALFPAGE, BannerSizeMapper.map(400, 700))
+        assertEquals(BannerSize.Fixed.HALFPAGE, BannerSizeMapper.map(400, 700))
     }
 
     @Test
     fun `rejects half page for a slot one pixel too short and falls back to medium`() {
         // 300x599: one pixel short of the 600 HALFPAGE needs, so it falls back to the next-largest size
         // that fits, MEDIUM 300x250.
-        assertEquals(Banner.BannerSize.MEDIUM, BannerSizeMapper.map(300, 599))
+        assertEquals(BannerSize.Fixed.MEDIUM, BannerSizeMapper.map(300, 599))
     }
 
     @Test
@@ -111,7 +111,7 @@ class BannerSizeMapperTest {
     @Test
     fun `reports the host SDK's renderable sizes for error messages`() {
         val sizes = BannerSizeMapper.supportedSizes()
-        Banner.BannerSize.entries.forEach { size ->
+        BannerSize.Fixed.entries.forEach { size ->
             assertEquals(true, sizes.contains("${size.width}x${size.height}"))
         }
     }
